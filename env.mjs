@@ -53,11 +53,18 @@ export const env = createEnv({
 			z.string().url().optional()
 		).optional(),
 		// Agent-Managed Call Lists Configuration
-		AGENT_LIST_KEYS: z.string().default("CALL_NOW,NEW_LEADS,FOLLOW_UP,HOT").optional(),
-		DEFAULT_AGENT_KEY: z.string().default("UNASSIGNED").optional(),
-		GHL_ASSIGNED_AGENT_FIELD_KEY: z.string().default("assignedAgent").optional(),
-		ENABLE_AGENT_LIST_SYNC: z.string().default("true").optional(),
-		TAG_MATCH_MODE: z.enum(["exact", "case_insensitive", "regex"]).default("case_insensitive").optional(),
+		AGENT_LIST_KEYS: z.string().default("CALL_NOW,NEW_LEADS,FOLLOW_UP,HOT"),
+		DEFAULT_AGENT_KEY: z.string().default("UNASSIGNED"),
+		GHL_ASSIGNED_AGENT_FIELD_KEY: z.string().default("assignedAgent"),
+		ENABLE_AGENT_LIST_SYNC: z.string().default("true"),
+		TAG_MATCH_MODE: z.preprocess(
+			(val) => {
+				if (!val || val === "") return "case_insensitive";
+				if (["exact", "case_insensitive", "regex"].includes(String(val))) return String(val);
+				return "case_insensitive";
+			},
+			z.enum(["exact", "case_insensitive", "regex"]).default("case_insensitive")
+		),
 	},
 	client: {},
 	runtimeEnv: {

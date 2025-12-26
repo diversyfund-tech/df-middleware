@@ -1,5 +1,5 @@
 import { db } from "@/server/db";
-import { contactMappings, contactListMemberships, syncLog, optoutRegistry } from "@/server/db/schema";
+import { contactMappings, contactListMemberships, syncLog, optoutRegistry, callListRegistry } from "@/server/db/schema";
 import { eq, and } from "drizzle-orm";
 import { addContactsToList, removeContactsFromList } from "@/lib/aloware/client";
 import { ensureCallList } from "./ensureCallList";

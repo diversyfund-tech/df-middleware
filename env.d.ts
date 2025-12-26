@@ -28,6 +28,12 @@ declare module "@/env" {
 		CONTACT_SOURCE_OF_TRUTH: "ghl" | "aloware" | "merge";
 		// Alerting Configuration
 		ALERT_WEBHOOK_URL?: string;
+		// Agent-Managed Call Lists Configuration
+		AGENT_LIST_KEYS: string;
+		DEFAULT_AGENT_KEY: string;
+		GHL_ASSIGNED_AGENT_FIELD_KEY: string;
+		ENABLE_AGENT_LIST_SYNC: string;
+		TAG_MATCH_MODE: "exact" | "case_insensitive" | "regex";
 	};
 }
 
