@@ -29,9 +29,29 @@ export const env = createEnv({
 		// Admin Configuration
 		DF_ADMIN_SECRET: z.string().min(1),
 		// Conflict Resolution Configuration
-		CONTACT_SOURCE_OF_TRUTH: z.enum(["ghl", "aloware", "merge"]).optional().default("merge"),
+		CONTACT_SOURCE_OF_TRUTH: z.preprocess(
+			(val) => {
+				const trimmed = typeof val === "string" ? val.trim() : "";
+				if (!trimmed || trimmed === "") return "merge";
+				if (["ghl", "aloware", "merge"].includes(trimmed)) return trimmed;
+				return "merge"; // default for invalid values
+			},
+			z.enum(["ghl", "aloware", "merge"]).default("merge")
+		).optional(),
 		// Alerting Configuration
-		ALERT_WEBHOOK_URL: z.union([z.string().url(), z.literal("")]).optional(),
+		ALERT_WEBHOOK_URL: z.preprocess(
+			(val) => {
+				const trimmed = typeof val === "string" ? val.trim() : "";
+				if (!trimmed || trimmed === "") return undefined;
+				try {
+					new URL(trimmed);
+					return trimmed;
+				} catch {
+					return undefined; // invalid URL becomes undefined
+				}
+			},
+			z.string().url().optional()
+		).optional(),
 	},
 	client: {},
 	runtimeEnv: {
