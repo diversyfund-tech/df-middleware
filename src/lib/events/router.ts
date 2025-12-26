@@ -345,10 +345,8 @@ async function routeGhLEvent(event: WebhookEvent, correlationId: string): Promis
 
 	// Handle contact events
 	if (event.entityType === "contact") {
-		// Sync GHL contact to Aloware (GHL is source of truth)
-		await syncGHLContactToAloware(event.entityId, { correlationId });
-
 		// Agent-managed list sync (if enabled)
+		// Note: We only sync contacts to Aloware when needed for call lists (GHL is source of truth)
 		if (enableAgentListSync && (event.eventType === "contact.created" || event.eventType === "contact.updated" || event.eventType === "contact.changed")) {
 			try {
 				// Fetch full contact from GHL API (defensive: payload may be incomplete)

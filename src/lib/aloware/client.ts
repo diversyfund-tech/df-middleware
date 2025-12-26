@@ -36,8 +36,12 @@ async function alowareRequest<T>(
 
 	if (!response.ok) {
 		const errorText = await response.text().catch(() => "Unknown error");
+		// Log the full URL for debugging
+		console.error(`[aloware] API request failed: ${url}`);
+		console.error(`[aloware] Response status: ${response.status} ${response.statusText}`);
+		console.error(`[aloware] Response body: ${errorText.substring(0, 500)}`);
 		throw new Error(
-			`Aloware API error: ${response.status} ${response.statusText} - ${errorText}`,
+			`Aloware API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`,
 		);
 	}
 
