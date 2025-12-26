@@ -29,9 +29,9 @@ export const env = createEnv({
 		// Admin Configuration
 		DF_ADMIN_SECRET: z.string().min(1),
 		// Conflict Resolution Configuration
-		CONTACT_SOURCE_OF_TRUTH: z.enum(["ghl", "aloware", "merge"]).default("merge"),
+		CONTACT_SOURCE_OF_TRUTH: z.enum(["ghl", "aloware", "merge"]).optional().default("merge"),
 		// Alerting Configuration
-		ALERT_WEBHOOK_URL: z.string().url().optional(),
+		ALERT_WEBHOOK_URL: z.union([z.string().url(), z.literal("")]).optional(),
 	},
 	client: {},
 	runtimeEnv: {
