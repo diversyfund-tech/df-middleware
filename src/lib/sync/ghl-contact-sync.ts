@@ -184,16 +184,21 @@ export async function syncGHLContactToAloware(
 			// Apply merge based on source of truth
 			if (CONTACT_SOURCE_OF_TRUTH === "merge" || CONTACT_SOURCE_OF_TRUTH === "ghl") {
 				// Update Aloware with merged data
-				await updateAlowareContact(alowareContactId, {
-					first_name: merged.firstName,
-					last_name: merged.lastName,
-					email: merged.email,
-					phone_number: merged.phone,
-					timezone: merged.timezone,
-					country: merged.address?.country,
-					state: merged.address?.state,
-					city: merged.address?.city,
-				});
+				// Phone number is required for Aloware API
+				if (!merged.phone) {
+					console.warn(`[ghl-contact-sync] Cannot update Aloware contact ${alowareContactId}: no phone number`);
+				} else {
+					await updateAlowareContact(alowareContactId, {
+						first_name: merged.firstName,
+						last_name: merged.lastName,
+						email: merged.email,
+						phone_number: merged.phone, // Required for Aloware API
+						timezone: merged.timezone,
+						country: merged.address?.country,
+						state: merged.address?.state,
+						city: merged.address?.city,
+					});
+				}
 
 				// If merge requires updating GHL, do that too
 				if (CONTACT_SOURCE_OF_TRUTH === "merge") {

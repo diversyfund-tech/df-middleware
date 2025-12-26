@@ -72,16 +72,27 @@ export async function getUsers(): Promise<import("./types").AlowareUser[]> {
 
 /**
  * Get a contact by ID
+ * NOTE: Aloware API doesn't support getting contacts by ID directly.
+ * This function requires a phone number to look up the contact.
+ * If you only have an ID, use searchContacts with the phone number instead.
  */
-export async function getContact(contactId: string): Promise<import("./types").AlowareContact | null> {
+export async function getContact(
+	contactId: string,
+	phoneNumber?: string
+): Promise<import("./types").AlowareContact | null> {
 	try {
-		const data = await alowareRequest<import("./types").AlowareContact>(
-			`/contacts/${contactId}`
-		);
-		return data;
+		// If phone number is provided, use the lookup endpoint
+		if (phoneNumber) {
+			const contacts = await searchContacts(phoneNumber);
+			return contacts.length > 0 ? contacts[0]! : null;
+		}
+
+		// Otherwise, we can't look up by ID - return null
+		console.warn(`[aloware] getContact called with ID ${contactId} but no phone number. Aloware API requires phone number for contact lookup.`);
+		return null;
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
-		if (errorMessage.includes("404")) {
+		if (errorMessage.includes("404") || errorMessage.includes("not found")) {
 			return null;
 		}
 		console.error("[aloware] Error fetching contact:", error);
@@ -239,6 +250,9 @@ export async function createContact(
  * Update a contact
  * Uses Aloware's webhook API: POST /api/v1/webhook/forms with force_update=true
  * API token must be in the body, not query params
+ * 
+ * @param contactId - Contact ID (not used, but kept for compatibility)
+ * @param updates - Contact updates, must include phone_number
  */
 export async function updateContact(
 	contactId: string,
@@ -250,15 +264,10 @@ export async function updateContact(
 			throw new Error("ALOWARE_API_TOKEN is not configured");
 		}
 
-		// Get existing contact to get phone number (required for update)
-		const existingContact = await getContact(contactId);
-		if (!existingContact) {
-			throw new Error(`Contact ${contactId} not found`);
-		}
-
-		const phoneNumber = updates.phone_number || existingContact.phone_number;
+		// Phone number is required for Aloware API
+		const phoneNumber = updates.phone_number;
 		if (!phoneNumber) {
-			throw new Error("phone_number is required for Aloware contact update");
+			throw new Error("phone_number is required for Aloware contact update. Cannot look up contact by ID.");
 		}
 
 		// Normalize phone number

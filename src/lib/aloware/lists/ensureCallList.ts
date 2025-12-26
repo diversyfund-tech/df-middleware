@@ -1,11 +1,14 @@
 import { db } from "@/server/db";
 import { callListRegistry } from "@/server/db/schema";
 import { eq, and } from "drizzle-orm";
-import { createCallList } from "@/lib/aloware/client";
+import { getCallLists } from "@/lib/aloware/client";
 
 /**
  * Ensure a call list exists in Aloware for the given agent/listKey combination
- * Returns the Aloware list ID (creates if needed)
+ * Returns the Aloware list ID
+ * 
+ * NOTE: Aloware API does not support creating call lists programmatically.
+ * Lists must be created manually in Aloware first, then this function will find them by name.
  */
 export async function ensureCallList(
 	agentKey: string,
@@ -23,18 +26,27 @@ export async function ensureCallList(
 		return existing.alowareListId;
 	}
 
-	// Create list in Aloware
+	// Find list in Aloware by name (lists must be created manually)
 	const alowareListName = `DF_${agentKey}_${listKey}`;
-	const description = `Synced call list for ${agentKey} - ${listKey}`;
 
 	try {
-		const alowareList = await createCallList({
-			name: alowareListName,
-			description,
-			contact_ids: [],
-		});
+		// Fetch all call lists from Aloware
+		const allLists = await getCallLists();
+		
+		// Find list by name (case-insensitive)
+		const foundList = allLists.find(
+			list => list.name?.toLowerCase() === alowareListName.toLowerCase()
+		);
 
-		const alowareListId = alowareList.id;
+		if (!foundList || !foundList.id) {
+			throw new Error(
+				`Call list "${alowareListName}" not found in Aloware. ` +
+				`Please create this list manually in Aloware first. ` +
+				`The list name must match exactly: "${alowareListName}"`
+			);
+		}
+
+		const alowareListId = String(foundList.id);
 
 		// Store in registry
 		await db
@@ -56,7 +68,8 @@ export async function ensureCallList(
 
 		return alowareListId;
 	} catch (error) {
-		console.error(`[ensureCallList] Error creating list ${alowareListName}:`, error);
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		console.error(`[ensureCallList] Error finding list ${alowareListName}:`, errorMessage);
 		throw error;
 	}
 }
