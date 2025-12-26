@@ -135,8 +135,11 @@ export async function syncGHLContactToAloware(
 
 		if (existingMapping && existingMapping.alowareContactId) {
 			alowareContactId = existingMapping.alowareContactId;
-			// Try to fetch Aloware contact
-			alowareContact = await import("@/lib/aloware/client").then(m => m.getContact(alowareContactId));
+			// Try to fetch Aloware contact using phone number from mapping
+			const phoneForLookup = existingMapping.phoneNumber || ghlContact.phone;
+			if (phoneForLookup) {
+				alowareContact = await import("@/lib/aloware/client").then(m => m.getContact(alowareContactId, phoneForLookup));
+			}
 		} else {
 			// Search by phone/email
 			const alowareContacts = await searchContacts(ghlContact.phone, ghlContact.email);
