@@ -19,6 +19,7 @@ export interface GHLContact {
 	dateAdded?: string;
 	dateUpdated?: string;
 	updatedAt?: string;
+	owner?: string | { id?: string; email?: string; name?: string } | null; // GHL owner (can be ID string or object)
 	[key: string]: unknown;
 }
 

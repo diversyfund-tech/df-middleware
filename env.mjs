@@ -52,6 +52,12 @@ export const env = createEnv({
 			},
 			z.string().url().optional()
 		).optional(),
+		// Agent-Managed Call Lists Configuration
+		AGENT_LIST_KEYS: z.string().default("CALL_NOW,NEW_LEADS,FOLLOW_UP,HOT").optional(),
+		DEFAULT_AGENT_KEY: z.string().default("UNASSIGNED").optional(),
+		GHL_ASSIGNED_AGENT_FIELD_KEY: z.string().default("assignedAgent").optional(),
+		ENABLE_AGENT_LIST_SYNC: z.string().default("true").optional(),
+		TAG_MATCH_MODE: z.enum(["exact", "case_insensitive", "regex"]).default("case_insensitive").optional(),
 	},
 	client: {},
 	runtimeEnv: {
@@ -76,6 +82,11 @@ export const env = createEnv({
 		DF_ADMIN_SECRET: process.env.DF_ADMIN_SECRET,
 		CONTACT_SOURCE_OF_TRUTH: process.env.CONTACT_SOURCE_OF_TRUTH,
 		ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL,
+		AGENT_LIST_KEYS: process.env.AGENT_LIST_KEYS,
+		DEFAULT_AGENT_KEY: process.env.DEFAULT_AGENT_KEY,
+		GHL_ASSIGNED_AGENT_FIELD_KEY: process.env.GHL_ASSIGNED_AGENT_FIELD_KEY,
+		ENABLE_AGENT_LIST_SYNC: process.env.ENABLE_AGENT_LIST_SYNC,
+		TAG_MATCH_MODE: process.env.TAG_MATCH_MODE,
 	},
 	skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
 });

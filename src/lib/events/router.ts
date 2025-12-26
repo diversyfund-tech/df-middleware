@@ -1,5 +1,5 @@
 import { db } from "@/server/db";
-import { syncLog, webhookEvents, contactMappings } from "@/server/db/schema";
+import { syncLog, webhookEvents, contactMappings, contactAgentState } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { syncAlowareContactToGHL } from "@/lib/sync/contact-sync";
 import { syncAlowareCallToGHL } from "@/lib/sync/call-sync";
@@ -14,7 +14,12 @@ import { syncAlowareCallSummaryToGHL } from "@/lib/sync/call-summary-sync";
 import { syncAlowareRecordingToGHL } from "@/lib/sync/recording-sync";
 import { syncAlowareVoicemailToGHL } from "@/lib/sync/voicemail-sync";
 import { syncAlowareCommunicationToGHL } from "@/lib/sync/communication-sync";
-import { addTagsToContact } from "@/lib/ghl/client";
+import { addTagsToContact, getContact as getGhlContact } from "@/lib/ghl/client";
+import { env } from "@/env";
+import { resolveAgentForGhlContact } from "@/lib/agents/resolveAgent";
+import { resolveListKeysForEvent } from "@/lib/lists/resolveListIntent";
+import { applyListMembershipChange } from "@/lib/aloware/lists/applyMembership";
+import { detectAndHandleReassignment } from "@/lib/agents/detectReassignment";
 
 type WebhookEvent = typeof webhookEvents.$inferSelect;
 
@@ -290,49 +295,170 @@ async function handleContactDisposed(
  * Route GHL webhook events
  */
 async function routeGhLEvent(event: WebhookEvent, correlationId: string): Promise<void> {
+	const enableAgentListSync = env.ENABLE_AGENT_LIST_SYNC !== "false"; // Default to true
+
+	// Handle tag events (legacy sync + agent-managed lists)
 	if (event.entityType === "tag" || event.eventType.includes("tag")) {
-		// Extract tag name and sync to Aloware list
+		// Legacy tag sync (for backward compatibility)
 		const tagName = extractTagNameFromGhlPayload(event.payloadJson);
-		if (!tagName) {
-			throw new Error(`Could not extract tag name from GHL payload for event ${event.id}`);
+		if (tagName) {
+			await syncGHLTagToAlowareList(tagName, correlationId);
 		}
-		await syncGHLTagToAlowareList(tagName, correlationId);
-	} else if (event.entityType === "contact" && (event.eventType === "contact.created" || event.eventType === "contact.updated")) {
+
+		// Agent-managed list sync (if enabled)
+		if (enableAgentListSync) {
+			try {
+				// Extract contactId from payload (tag events should include contact info)
+				const contactId = (event.payloadJson as any)?.contactId || 
+					(event.payloadJson as any)?.contact?.id || 
+					event.entityId;
+				
+				if (contactId) {
+					// Fetch full contact to get current tags/owner
+					const contact = await getGhlContact(contactId);
+					if (contact) {
+						// Resolve agent
+						const { agentKey } = await resolveAgentForGhlContact(contact);
+						
+						// Resolve list intent (tag events directly map to listKeys)
+						const listIntent = await resolveListKeysForEvent(event.eventType, event.payloadJson, contact);
+						
+						// Apply membership changes
+						if (listIntent.add.length > 0 || listIntent.remove.length > 0) {
+							await applyListMembershipChange({
+								ghlContactId: contactId,
+								agentKey,
+								addListKeys: listIntent.add,
+								removeListKeys: listIntent.remove,
+								correlationId,
+							});
+						}
+					}
+				}
+			} catch (error) {
+				console.error(`[router] Error processing tag event for agent lists:`, error);
+				// Don't throw - continue with legacy sync
+			}
+		}
+		return;
+	}
+
+	// Handle contact events
+	if (event.entityType === "contact") {
 		// Sync GHL contact to Aloware (GHL is source of truth)
 		await syncGHLContactToAloware(event.entityId, { correlationId });
-	} else if (event.entityType === "contact" && event.eventType === "contact.deleted") {
-		// GHL contact deleted - mark Aloware contact as inactive/DNC if mapping exists
-		const mapping = await db.query.contactMappings.findFirst({
-			where: eq(contactMappings.ghlContactId, event.entityId),
-		});
-		if (mapping?.alowareContactId) {
-			// TODO: Mark Aloware contact as inactive/DNC if API supports it
-			console.log(`[router] GHL contact ${event.entityId} deleted, Aloware contact ${mapping.alowareContactId} should be marked inactive`);
-			await db.insert(syncLog).values({
-				direction: "ghl_to_aloware",
-				entityType: "contact",
-				entityId: event.entityId,
-				sourceId: event.entityId,
-				targetId: mapping.alowareContactId,
-				status: "skipped",
-				finishedAt: new Date(),
-				errorMessage: "contact.deleted not fully implemented - manual cleanup may be needed",
-				correlationId,
-			});
+
+		// Agent-managed list sync (if enabled)
+		if (enableAgentListSync && (event.eventType === "contact.created" || event.eventType === "contact.updated" || event.eventType === "contact.changed")) {
+			try {
+				// Fetch full contact from GHL API (defensive: payload may be incomplete)
+				const contact = await getGhlContact(event.entityId);
+				if (!contact) {
+					console.warn(`[router] Contact ${event.entityId} not found in GHL`);
+					return;
+				}
+
+				// Resolve agent
+				const { agentKey } = await resolveAgentForGhlContact(contact);
+
+				// Check existing state before reassignment detection
+				const existingStateBefore = await db.query.contactAgentState.findFirst({
+					where: eq(contactAgentState.contactId, event.entityId),
+				});
+
+				// Detect and handle reassignment (if agent changed)
+				await detectAndHandleReassignment(event.entityId, agentKey, contact, correlationId);
+
+				// Only process list intent if this wasn't a reassignment
+				// (detectAndHandleReassignment already handled reassignments)
+				const wasReassignment = existingStateBefore && existingStateBefore.agentKey !== agentKey;
+				if (!wasReassignment) {
+					const listIntent = await resolveListKeysForEvent(event.eventType, event.payloadJson, contact);
+					
+					if (listIntent.add.length > 0 || listIntent.remove.length > 0) {
+						await applyListMembershipChange({
+							ghlContactId: event.entityId,
+							agentKey,
+							addListKeys: listIntent.add,
+							removeListKeys: listIntent.remove,
+							correlationId,
+						});
+					}
+				}
+			} catch (error) {
+				console.error(`[router] Error processing contact event for agent lists:`, error);
+				// Don't throw - contact sync already succeeded
+			}
 		}
-	} else {
-		// Unknown/unhandled GHL event type - Skip gracefully
-		console.log(`[router] Unhandled GHL event type: ${event.entityType} (${event.eventType})`);
-		await db.insert(syncLog).values({
-			direction: "ghl_to_aloware",
-			entityType: event.entityType,
-			entityId: event.entityId,
-			sourceId: event.entityId,
-			status: "skipped",
-			finishedAt: new Date(),
-			errorMessage: `Unhandled GHL event type: ${event.eventType}`,
-			correlationId,
-		});
+
+		// Handle contact.deleted
+		if (event.eventType === "contact.deleted") {
+			const mapping = await db.query.contactMappings.findFirst({
+				where: eq(contactMappings.ghlContactId, event.entityId),
+			});
+			if (mapping?.alowareContactId) {
+				// TODO: Mark Aloware contact as inactive/DNC if API supports it
+				console.log(`[router] GHL contact ${event.entityId} deleted, Aloware contact ${mapping.alowareContactId} should be marked inactive`);
+				await db.insert(syncLog).values({
+					direction: "ghl_to_aloware",
+					entityType: "contact",
+					entityId: event.entityId,
+					sourceId: event.entityId,
+					targetId: mapping.alowareContactId,
+					status: "skipped",
+					finishedAt: new Date(),
+					errorMessage: "contact.deleted not fully implemented - manual cleanup may be needed",
+					correlationId,
+				});
+			}
+		}
+		return;
 	}
+
+	// Handle pipeline/opportunity events (if present)
+	if (enableAgentListSync && (event.eventType === "opportunity.statusChanged" || event.eventType === "pipeline.stageChanged")) {
+		try {
+			const contactId = (event.payloadJson as any)?.contactId || event.entityId;
+			if (contactId) {
+				// Fetch full contact
+				const contact = await getGhlContact(contactId);
+				if (contact) {
+					// Resolve agent
+					const { agentKey } = await resolveAgentForGhlContact(contact);
+					
+					// Resolve list intent based on pipeline stage
+					const listIntent = await resolveListKeysForEvent(event.eventType, event.payloadJson, contact);
+					
+					// Apply membership changes
+					if (listIntent.add.length > 0 || listIntent.remove.length > 0) {
+						await applyListMembershipChange({
+							ghlContactId: contactId,
+							agentKey,
+							addListKeys: listIntent.add,
+							removeListKeys: listIntent.remove,
+							correlationId,
+						});
+					}
+				}
+			}
+		} catch (error) {
+			console.error(`[router] Error processing pipeline event for agent lists:`, error);
+			// Don't throw - mark as skipped
+		}
+		return;
+	}
+
+	// Unknown/unhandled GHL event type - Skip gracefully (never throw)
+	console.log(`[router] Unhandled GHL event type: ${event.entityType} (${event.eventType})`);
+	await db.insert(syncLog).values({
+		direction: "ghl_to_aloware",
+		entityType: event.entityType,
+		entityId: event.entityId,
+		sourceId: event.entityId,
+		status: "skipped",
+		finishedAt: new Date(),
+		errorMessage: `Unhandled GHL event type: ${event.eventType}`,
+		correlationId,
+	});
 }
 

@@ -285,3 +285,44 @@ export async function removeTagsFromContact(ghlContactId: string, tags: string[]
 	return updateContact(ghlContactId, { tags: newTags });
 }
 
+/**
+ * Get users/team members from GHL
+ * Note: GHL API may use different endpoints - this is a best-effort implementation
+ */
+export async function getUsers(): Promise<Array<{ id?: string; email?: string; name?: string; [key: string]: unknown }>> {
+	try {
+		// Try common GHL endpoints for users/team members
+		const endpoints = ["/users", "/team-members", "/team"];
+		
+		for (const endpoint of endpoints) {
+			try {
+				const response = await ghlRequest<{ users?: unknown[]; teamMembers?: unknown[]; data?: unknown[]; [key: string]: unknown }>(endpoint);
+				
+				// Handle different response structures
+				if (Array.isArray(response)) {
+					return response as Array<{ id?: string; email?: string; name?: string; [key: string]: unknown }>;
+				}
+				if (response.users && Array.isArray(response.users)) {
+					return response.users as Array<{ id?: string; email?: string; name?: string; [key: string]: unknown }>;
+				}
+				if (response.teamMembers && Array.isArray(response.teamMembers)) {
+					return response.teamMembers as Array<{ id?: string; email?: string; name?: string; [key: string]: unknown }>;
+				}
+				if (response.data && Array.isArray(response.data)) {
+					return response.data as Array<{ id?: string; email?: string; name?: string; [key: string]: unknown }>;
+				}
+			} catch {
+				// Try next endpoint
+				continue;
+			}
+		}
+		
+		// If no endpoint worked, return empty array
+		console.warn("[GHL] Could not fetch users from any known endpoint");
+		return [];
+	} catch (error) {
+		console.error("[GHL] Error fetching users:", error);
+		return [];
+	}
+}
+

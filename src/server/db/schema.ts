@@ -6,6 +6,7 @@ import {
 	index,
 	uniqueIndex,
 	jsonb,
+	boolean,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -236,6 +237,109 @@ export const quarantineEvents = pgTable(
 	(table) => ({
 		eventIdIdx: index("quarantine_events_event_id_idx").on(table.eventId),
 		eventSourceIdx: index("quarantine_events_event_source_idx").on(table.eventSource),
+	}),
+);
+
+/**
+ * Agent Directory Table
+ * Maps agent keys to GHL identifiers for agent resolution
+ */
+export const agentDirectory = pgTable(
+	"agent_directory",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		agentKey: text("agent_key").notNull(), // 'CHRIS' | 'RAFI' | 'UNASSIGNED'
+		displayName: text("display_name").notNull(),
+		ghlOwnerId: text("ghl_owner_id"), // GHL owner ID
+		ghlOwnerEmail: text("ghl_owner_email"), // GHL owner email
+		ghlAssignedAgentFieldValue: text("ghl_assigned_agent_field_value"), // Custom field value (e.g., "Chris", "Rafi")
+		requiredTag: text("required_tag"), // Tag pattern (e.g., "Owner: Chris")
+		alowareUserId: text("aloware_user_id"), // Optional Aloware user ID
+		isActive: boolean("is_active").default(true).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => ({
+		agentKeyUnique: uniqueIndex("agent_directory_agent_key_unique").on(table.agentKey),
+		isActiveIdx: index("agent_directory_is_active_idx").on(table.isActive),
+	}),
+);
+
+/**
+ * Call List Registry Table
+ * Tracks Aloware list IDs per agent/listKey combination
+ */
+export const callListRegistry = pgTable(
+	"call_list_registry",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		agentKey: text("agent_key").notNull(),
+		listKey: text("list_key").notNull(), // 'CALL_NOW' | 'NEW_LEADS' | 'FOLLOW_UP' | 'HOT'
+		alowareListId: text("aloware_list_id"), // Aloware list ID
+		alowareListName: text("aloware_list_name").notNull(), // e.g., 'DF_CHRIS_CALL_NOW'
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => ({
+		agentListUnique: uniqueIndex("call_list_registry_agent_list_unique").on(
+			table.agentKey,
+			table.listKey,
+		),
+		alowareListNameUnique: uniqueIndex("call_list_registry_aloware_list_name_unique").on(
+			table.alowareListName,
+		),
+		agentKeyIdx: index("call_list_registry_agent_key_idx").on(table.agentKey),
+		listKeyIdx: index("call_list_registry_list_key_idx").on(table.listKey),
+	}),
+);
+
+/**
+ * Contact List Memberships Table
+ * Tracks which contacts belong to which lists
+ */
+export const contactListMemberships = pgTable(
+	"contact_list_memberships",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		contactId: text("contact_id").notNull(), // GHL contact ID
+		agentKey: text("agent_key").notNull(),
+		listKey: text("list_key").notNull(),
+		status: text("status").notNull(), // 'active' | 'removed'
+		reason: text("reason"), // Optional reason for status change
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => ({
+		contactAgentListUnique: uniqueIndex("contact_list_memberships_contact_agent_list_unique").on(
+			table.contactId,
+			table.agentKey,
+			table.listKey,
+		),
+		contactIdIdx: index("contact_list_memberships_contact_id_idx").on(table.contactId),
+		agentListIdx: index("contact_list_memberships_agent_list_idx").on(
+			table.agentKey,
+			table.listKey,
+		),
+		statusIdx: index("contact_list_memberships_status_idx").on(table.status),
+	}),
+);
+
+/**
+ * Contact Agent State Table
+ * Tracks last known agent assignment for reassignment detection
+ */
+export const contactAgentState = pgTable(
+	"contact_agent_state",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		contactId: text("contact_id").notNull(), // GHL contact ID
+		agentKey: text("agent_key").notNull(), // Last known agent key
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => ({
+		contactIdUnique: uniqueIndex("contact_agent_state_contact_id_unique").on(table.contactId),
+		agentKeyIdx: index("contact_agent_state_agent_key_idx").on(table.agentKey),
 	}),
 );
 

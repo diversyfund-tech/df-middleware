@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
 	const entityType = eventType.includes("appointment") ? "appointment" :
 		eventType.includes("contact") ? "contact" :
 		eventType.includes("tag") || eventType.includes("segment") ? "tag" :
+		eventType.includes("opportunity") || eventType.includes("pipeline") ? "opportunity" :
 		"unknown";
 	
 	const entityId = extractEntityId(body);
