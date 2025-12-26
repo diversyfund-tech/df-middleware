@@ -101,9 +101,46 @@ pnpm run dev
 
 ### Running the Worker
 
-The middleware uses an async event processing system powered by pg-boss. Webhook events are stored with `status='pending'` and processed by a background worker.
+The middleware uses an async event processing system powered by pg-boss. Webhook events are **automatically enqueued** when received, but need a worker process to consume and process them.
 
-**Start the worker:**
+#### Option 1: Dedicated Worker (Recommended for Production)
+
+Deploy the worker as a separate long-running process. Vercel doesn't support long-running processes, so use one of these services:
+
+**Railway:**
+1. Create a new Railway project
+2. Connect your GitHub repo
+3. Add environment variables (same as Vercel)
+4. Set start command: `pnpm run worker`
+5. Deploy
+
+**Render:**
+1. Create a new Background Worker service
+2. Connect your GitHub repo
+3. Add environment variables
+4. Set build command: `pnpm install`
+5. Set start command: `pnpm run worker`
+6. Deploy
+
+**Fly.io:**
+1. Install Fly CLI: `curl -L https://fly.io/install.sh | sh`
+2. Create app: `fly launch`
+3. Create `fly.toml`:
+```toml
+[build]
+  builder = "paketobuildpacks/builder:base"
+
+[env]
+  NODE_ENV = "production"
+
+[[services]]
+  internal_port = 3000
+  protocol = "tcp"
+```
+
+4. Deploy: `fly deploy --remote-only`
+
+**Local Development:**
 ```bash
 pnpm run worker
 ```
@@ -114,13 +151,19 @@ The worker will:
 - Update event status to `done` or `error`
 - Handle retries automatically (up to 10 retries with exponential backoff)
 
-**Enqueue pending events:**
+#### Option 2: Vercel Cron Fallback (Automatic)
+
+If no dedicated worker is running, Vercel Cron will automatically process pending events every 5 minutes via `/api/jobs/process-pending`. This is configured in `vercel.json` and runs automatically after deployment.
+
+**Note:** Events are now **auto-enqueued** when webhooks are received, so they'll be processed by:
+1. The dedicated worker (if running) - processes immediately
+2. Vercel Cron (fallback) - processes every 5 minutes
+
+**Manual Enqueue (if needed):**
 ```bash
 curl -X POST http://localhost:3000/api/jobs/enqueue-pending \
   -H "X-DF-JOBS-SECRET: your-secret-key"
 ```
-
-This will enqueue up to 100 pending events (or `JOBS_BATCH_SIZE` if configured) for processing.
 
 **Process events immediately (for testing):**
 ```bash

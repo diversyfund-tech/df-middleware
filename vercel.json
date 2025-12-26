@@ -1,0 +1,9 @@
+{
+  "crons": [
+    {
+      "path": "/api/jobs/process-pending",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
+

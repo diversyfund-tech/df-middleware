@@ -3,6 +3,7 @@ import { env } from "@/env";
 import { db } from "@/server/db";
 import { webhookEvents } from "@/server/db/schema";
 import { computeDedupeKey, extractEventType, extractEntityId } from "@/lib/sync/utils";
+import { startBoss, WEBHOOK_EVENT_QUEUE } from "@/lib/jobs/boss";
 
 export const dynamic = "force-dynamic";
 
@@ -85,9 +86,10 @@ export async function POST(req: NextRequest) {
 	// Compute dedupe key
 	const dedupeKey = computeDedupeKey("ghl", eventType, entityId, body);
 	
-	// Store webhook event
+	// Store webhook event and auto-enqueue for processing
+	let insertedEventId: string | null = null;
 	try {
-		await db
+		const inserted = await db
 			.insert(webhookEvents)
 			.values({
 				source: "ghl",
@@ -98,9 +100,18 @@ export async function POST(req: NextRequest) {
 				dedupeKey,
 				status: "pending",
 			})
+			.returning({ id: webhookEvents.id })
 			.onConflictDoNothing({ target: webhookEvents.dedupeKey });
+		
+		// If event was inserted (not a duplicate), get the ID for enqueueing
+		if (inserted && inserted.length > 0) {
+			insertedEventId = inserted[0]!.id;
+		} else {
+			// Duplicate event - that's fine, just return success
+			console.log(`[ghl.webhook] Duplicate event detected (dedupeKey: ${dedupeKey}), ignoring`);
+			return NextResponse.json({ success: true, message: "Duplicate event ignored" });
+		}
 	} catch (error) {
-		// If duplicate, that's fine - return success
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		const errorCode = (error as { code?: string }).code;
 		if (errorMessage.includes("duplicate") || errorCode === "23505") {
@@ -111,7 +122,23 @@ export async function POST(req: NextRequest) {
 		return new NextResponse("Internal server error", { status: 500 });
 	}
 	
-	// TODO: Trigger async processing (will be implemented in sync engine)
+	// Auto-enqueue for processing (if event was inserted)
+	if (insertedEventId) {
+		try {
+			const boss = await startBoss();
+			await boss.send(WEBHOOK_EVENT_QUEUE, {
+				webhookEventId: insertedEventId,
+			}, {
+				retryLimit: 10,
+				retryDelay: 60,
+				retryBackoff: true,
+			});
+			console.log(`[ghl.webhook] Auto-enqueued event ${insertedEventId} for processing`);
+		} catch (enqueueError) {
+			// Log but don't fail the webhook - event is stored and can be manually enqueued
+			console.error(`[ghl.webhook] Failed to auto-enqueue event ${insertedEventId}:`, enqueueError);
+		}
+	}
 	
 	// Return 200 immediately
 	return NextResponse.json({ success: true, message: "Webhook received" });
