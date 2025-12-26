@@ -21,14 +21,15 @@ function validateAdminSecret(req: NextRequest): boolean {
  */
 export async function POST(
 	req: NextRequest,
-	{ params }: { params: { id: string } }
+	{ params }: { params: Promise<{ id: string }> }
 ) {
 	if (!validateAdminSecret(req)) {
 		return new NextResponse("Unauthorized", { status: 401 });
 	}
 
 	try {
-		const eventId = params.id;
+		const { id } = await params;
+		const eventId = id;
 
 		// Load event
 		const event = await db.query.webhookEvents.findFirst({
