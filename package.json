@@ -2,16 +2,27 @@
   "name": "df-middleware",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.11.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "worker": "tsx src/scripts/worker.ts"
   },
   "dependencies": {
+    "@t3-oss/env-nextjs": "^0.13.10",
+    "drizzle-kit": "^0.31.8",
+    "drizzle-orm": "^0.45.1",
     "next": "16.1.1",
+    "pg-boss": "^10.0.0",
+    "postgres": "^3.4.7",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -22,6 +33,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }

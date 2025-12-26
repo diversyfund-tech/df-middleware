@@ -1,0 +1,1 @@
+ALTER TABLE "contact_mappings" ALTER COLUMN "aloware_contact_id" DROP NOT NULL;
