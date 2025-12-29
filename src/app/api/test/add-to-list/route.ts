@@ -26,7 +26,10 @@ export async function POST(req: NextRequest) {
 			);
 		}
 
-		const results: Record<string, unknown> = {
+		const results: {
+			ghlContactId: string;
+			steps: Array<Record<string, unknown>>;
+		} = {
 			ghlContactId,
 			steps: [],
 		};

@@ -12,7 +12,6 @@ import { db } from "../src/server/db";
 import { contactMappings } from "../src/server/db/schema";
 import { eq } from "drizzle-orm";
 import { getCallList, updateCallList } from "../src/lib/aloware/client";
-import { env } from "../src/env";
 
 const LIST_ID = "396726"; // DF_RAFI_NEW_LEADS
 

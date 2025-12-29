@@ -37,9 +37,7 @@ export async function POST(req: NextRequest) {
 
 		if (!ghlContactId) {
 			// Try to find any existing GHL contact from mappings
-			const anyMapping = await db.query.contactMappings.findFirst({
-				limit: 1,
-			});
+			const anyMapping = await db.query.contactMappings.findFirst();
 
 			if (anyMapping?.ghlContactId) {
 				ghlContactId = anyMapping.ghlContactId;
@@ -54,7 +52,11 @@ export async function POST(req: NextRequest) {
 			}
 		}
 
-		const results: Record<string, unknown> = {
+		const results: {
+			listId: string;
+			ghlContactId: string;
+			steps: Array<Record<string, unknown>>;
+		} = {
 			listId,
 			ghlContactId,
 			steps: [],

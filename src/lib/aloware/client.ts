@@ -305,8 +305,12 @@ export async function updateContact(
 			return updatedContact[0]!;
 		}
 
-		// Return existing contact with updates applied
-		return { ...existingContact, ...updates } as import("./types").AlowareContact;
+		// If we can't fetch it, return updates as a minimal contact object
+		return {
+			id: contactId, // Fallback ID
+			phone_number: normalizedPhone,
+			...updates,
+		} as import("./types").AlowareContact;
 	} catch (error) {
 		console.error("[aloware] Error updating contact:", error);
 		throw error;
