@@ -54,3 +54,4 @@ Once all lists are created in Aloware, the middleware will:
 After importing all lists, test by:
 1. Adding a tag like "Owner: Rafi" and "Call_Now" to a contact in GHL
 2. The middleware should automatically add that contact to the `DF_RAFI_CALL_NOW` list in Aloware
+
