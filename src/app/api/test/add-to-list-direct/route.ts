@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/server/db";
 import { contactMappings } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
-import { getCallList, updateCallList } from "@/lib/aloware/client";
+import { getCallList, addContactsToList } from "@/lib/aloware/client";
 
 export const dynamic = "force-dynamic";
 
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
 		}
 
 		// Step 3: Add contact to list
-		results.steps.push({ step: "3", action: "Adding contact to list via PUT /call-lists/{id}" });
+		results.steps.push({ step: "3", action: "Adding contact to list via Power Dialer webhook endpoint" });
 		
 		const contactAlreadyInList = existingIds.includes(alowareContactId);
 		
@@ -123,29 +123,23 @@ export async function POST(req: NextRequest) {
 			});
 		} else {
 			try {
-				// Try to add contact directly - if we couldn't fetch existing list,
-				// we'll just send the single contact ID (Aloware may merge it)
-				const contactIdsToSend = existingIds.length > 0 
-					? [...new Set([...existingIds, alowareContactId])]
-					: [alowareContactId];
-				
 				results.steps.push({ 
 					step: "3a", 
-					action: `PUT /call-lists/${listId}`,
+					action: `POST /webhook/powerdialer-add-contact-to-lists`,
 					payload: { 
-						contact_ids: contactIdsToSend,
-						contact_ids_count: contactIdsToSend.length,
-						note: existingIds.length === 0 ? "Could not fetch existing list, sending single contact ID" : "Merging with existing contacts"
+						list_id: listId,
+						contact_ids: [alowareContactId],
+						note: "Attempting to use Power Dialer webhook endpoint"
 					}
 				});
 
-				const updated = await updateCallList(listId, { contact_ids: contactIdsToSend });
+				const result = await addContactsToList(listId, [alowareContactId]);
 				
 				results.steps.push({ 
 					step: "3", 
 					status: "success", 
-					message: "Contact added successfully",
-					updatedContactCount: updated.contact_ids?.length || 0,
+					message: result.message || "Contact added successfully",
+					result: result,
 				});
 			} catch (error) {
 				const errorMessage = error instanceof Error ? error.message : String(error);
