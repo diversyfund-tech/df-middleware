@@ -373,17 +373,30 @@ export async function createCallList(
 
 /**
  * Update a call list
+ * NOTE: Aloware API may not support PUT for call lists.
+ * This function attempts to update, but may fail if the API doesn't support it.
  */
 export async function updateCallList(
 	listId: string,
 	updates: { name?: string; description?: string; contact_ids?: string[] }
 ): Promise<import("./types").AlowareCallList> {
 	try {
+		const apiToken = env.ALOWARE_API_TOKEN;
+		if (!apiToken) {
+			throw new Error("ALOWARE_API_TOKEN is not configured");
+		}
+
+		// Include API token in body for PUT requests (if required)
+		const payload = {
+			...updates,
+			api_token: apiToken,
+		};
+
 		const data = await alowareRequest<import("./types").AlowareCallList>(
 			`/call-lists/${listId}`,
 			{
 				method: "PUT",
-				body: JSON.stringify(updates),
+				body: JSON.stringify(payload),
 			}
 		);
 		return data;
