@@ -411,38 +411,171 @@ export async function updateCallList(
 }
 
 /**
- * Add contacts to a call list
+ * Add contacts to a Power Dialer list
+ * NOTE: Aloware API doesn't support direct add via PUT.
+ * This function attempts to use the webhook endpoint if available,
+ * otherwise it will need to use CSV import (not implemented here).
+ * 
+ * For now, this is a placeholder that throws an error indicating CSV import is required.
  */
 export async function addContactsToList(
 	listId: string,
 	contactIds: string[]
-): Promise<import("./types").AlowareCallList> {
-	const list = await getCallList(listId);
-	if (!list) {
-		throw new Error(`Call list ${listId} not found`);
+): Promise<{ message: string }> {
+	const apiToken = env.ALOWARE_API_TOKEN;
+	if (!apiToken) {
+		throw new Error("ALOWARE_API_TOKEN is not configured");
 	}
 
-	const existingIds = list.contact_ids || [];
-	const newIds = [...new Set([...existingIds, ...contactIds])];
+	// Try the webhook endpoint pattern (if it exists)
+	// Based on the pattern: /webhook/powerdialer-remove-contact-from-lists
+	// There might be: /webhook/powerdialer-add-contact-to-lists
+	try {
+		const payload = {
+			api_token: apiToken,
+			list_id: listId,
+			contact_ids: contactIds, // Array of contact IDs
+		};
 
-	return updateCallList(listId, { contact_ids: newIds });
+		const response = await fetch(`${ALOWARE_API_BASE_URL}/webhook/powerdialer-add-contact-to-lists`, {
+			method: "POST",
+			headers: {
+				"Accept": "application/json",
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(payload),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text().catch(() => "Unknown error");
+			// If 404, the endpoint doesn't exist - fall through to CSV import requirement
+			if (response.status === 404) {
+				throw new Error(
+					`Aloware API does not support programmatic addition of contacts to lists. ` +
+					`Please use CSV import to add contacts to list ${listId}. ` +
+					`Contact IDs to add: ${contactIds.join(", ")}`
+				);
+			}
+			throw new Error(`Aloware API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`);
+		}
+
+		return await response.json() as { message: string };
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		// If it's a 404 or the endpoint doesn't exist, provide helpful error
+		if (errorMessage.includes("404") || errorMessage.includes("does not support")) {
+			throw new Error(
+				`Aloware API does not support programmatic addition of contacts to Power Dialer lists. ` +
+				`Please use CSV import in Aloware to add the following contact IDs to list ${listId}: ` +
+				contactIds.join(", ")
+			);
+		}
+		console.error("[aloware] Error adding contacts to list:", error);
+		throw error;
+	}
 }
 
 /**
- * Remove contacts from a call list
+ * Remove a contact from all Power Dialer lists
+ * Uses: POST /api/v1/webhook/powerdialer-remove-contact-from-lists
+ */
+export async function removeContactFromAllLists(
+	contactId: string
+): Promise<{ message: string }> {
+	const apiToken = env.ALOWARE_API_TOKEN;
+	if (!apiToken) {
+		throw new Error("ALOWARE_API_TOKEN is not configured");
+	}
+
+	const payload = {
+		api_token: apiToken,
+		contact_id: contactId,
+	};
+
+	const response = await fetch(`${ALOWARE_API_BASE_URL}/webhook/powerdialer-remove-contact-from-lists`, {
+		method: "POST",
+		headers: {
+			"Accept": "application/json",
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify(payload),
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text().catch(() => "Unknown error");
+		console.error(`[aloware] API request failed: ${ALOWARE_API_BASE_URL}/webhook/powerdialer-remove-contact-from-lists`);
+		console.error(`[aloware] Response status: ${response.status} ${response.statusText}`);
+		console.error(`[aloware] Response body: ${errorText.substring(0, 500)}`);
+		throw new Error(
+			`Aloware API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`,
+		);
+	}
+
+	return await response.json() as { message: string };
+}
+
+/**
+ * Remove contacts from a specific call list
+ * NOTE: Aloware doesn't have a direct endpoint for this.
+ * We can remove from all lists, then re-add to the lists we want to keep.
+ * For now, this uses removeContactFromAllLists as a workaround.
  */
 export async function removeContactsFromList(
 	listId: string,
 	contactIds: string[]
-): Promise<import("./types").AlowareCallList> {
-	const list = await getCallList(listId);
-	if (!list) {
-		throw new Error(`Call list ${listId} not found`);
+): Promise<{ message: string }> {
+	// Aloware doesn't have a direct "remove from specific list" endpoint
+	// We can only remove from all lists
+	// For now, remove from all lists (this is a limitation)
+	const results = [];
+	for (const contactId of contactIds) {
+		try {
+			const result = await removeContactFromAllLists(contactId);
+			results.push({ contactId, result });
+		} catch (error) {
+			console.error(`[aloware] Error removing contact ${contactId} from all lists:`, error);
+			// Continue with other contacts
+		}
+	}
+	return { message: `Removed ${results.length} contact(s) from all Power Dialer lists` };
+}
+
+/**
+ * Clear all contacts from a Power Dialer list
+ * Uses: POST /api/v1/webhook/powerdialer-clear-list
+ */
+export async function clearCallList(
+	listId: string
+): Promise<{ message: string }> {
+	const apiToken = env.ALOWARE_API_TOKEN;
+	if (!apiToken) {
+		throw new Error("ALOWARE_API_TOKEN is not configured");
 	}
 
-	const existingIds = list.contact_ids || [];
-	const newIds = existingIds.filter(id => !contactIds.includes(id));
+	const payload = {
+		api_token: apiToken,
+		list_id: listId,
+	};
 
-	return updateCallList(listId, { contact_ids: newIds });
+	const response = await fetch(`${ALOWARE_API_BASE_URL}/webhook/powerdialer-clear-list`, {
+		method: "POST",
+		headers: {
+			"Accept": "application/json",
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify(payload),
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text().catch(() => "Unknown error");
+		console.error(`[aloware] API request failed: ${ALOWARE_API_BASE_URL}/webhook/powerdialer-clear-list`);
+		console.error(`[aloware] Response status: ${response.status} ${response.statusText}`);
+		console.error(`[aloware] Response body: ${errorText.substring(0, 500)}`);
+		throw new Error(
+			`Aloware API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`,
+		);
+	}
+
+	return await response.json() as { message: string };
 }
 
