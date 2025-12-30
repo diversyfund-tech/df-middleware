@@ -46,7 +46,7 @@ export async function getOrCreateConversation(
 	}
 
 	// Use configured provider ID or the one passed in
-	const providerId: string | undefined = conversationProviderId ?? env.GHL_CONVERSATION_PROVIDER_ID;
+	const providerId: string | undefined = conversationProviderId?.trim() ?? env.GHL_CONVERSATION_PROVIDER_ID?.trim();
 	if (!providerId) {
 		throw new Error("GHL_CONVERSATION_PROVIDER_ID is required. Create a Marketplace App with a custom SMS provider first.");
 	}
@@ -135,7 +135,7 @@ export async function addInboundMessage(
 	}
 
 	// Get conversationProviderId from options or env
-	const conversationProviderId: string | undefined = options?.conversationProviderId ?? env.GHL_CONVERSATION_PROVIDER_ID;
+	const conversationProviderId: string | undefined = options?.conversationProviderId?.trim() ?? env.GHL_CONVERSATION_PROVIDER_ID?.trim();
 	if (!conversationProviderId) {
 		throw new Error("GHL_CONVERSATION_PROVIDER_ID is required. Create a Marketplace App with a custom SMS provider first.");
 	}
@@ -250,7 +250,7 @@ export async function sendOutboundMessage(
 	}
 
 	// Get conversationProviderId from options or env
-	const conversationProviderId: string | undefined = options?.conversationProviderId ?? env.GHL_CONVERSATION_PROVIDER_ID;
+	const conversationProviderId: string | undefined = options?.conversationProviderId?.trim() ?? env.GHL_CONVERSATION_PROVIDER_ID?.trim();
 	if (!conversationProviderId) {
 		throw new Error("GHL_CONVERSATION_PROVIDER_ID is required. Create a Marketplace App with a custom SMS provider first.");
 	}
