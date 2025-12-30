@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 			);
 		}
 
-		const conversationProviderId = env.GHL_CONVERSATION_PROVIDER_ID;
+		const conversationProviderId = env.GHL_CONVERSATION_PROVIDER_ID?.trim();
 		if (!conversationProviderId) {
 			return NextResponse.json(
 				{ error: "GHL_CONVERSATION_PROVIDER_ID is not configured" },
