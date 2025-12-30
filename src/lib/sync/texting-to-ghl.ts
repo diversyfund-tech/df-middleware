@@ -1,7 +1,8 @@
 import { db } from "@/server/db";
 import { contactMappings, messageMappings, syncLog, optoutRegistry } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
-import { getOrCreateContact, getContact, updateContact, addTagsToContact } from "@/lib/ghl/client";
+import { getOrCreateContact, addTagsToContact } from "@/lib/ghl/client";
+import { addInboundMessage, sendOutboundMessage } from "@/lib/ghl/conversations";
 import { isStop } from "@/lib/compliance/smsOptOut";
 import type { TextingWebhookPayload } from "@/lib/texting/types";
 
@@ -85,27 +86,48 @@ export async function syncTextingMessageToGHL(
 			});
 		}
 
-		// Build message note
-		const timestamp = payload.timestamp 
-			? new Date(payload.timestamp).toLocaleString() 
-			: new Date().toLocaleString();
-		const directionLabel = payload.direction === "inbound" ? "Inbound" : "Outbound";
-		const messageNote = `[SMS][${directionLabel}] ${timestamp}\nFrom: ${payload.from || "unknown"}\nTo: ${payload.to || "unknown"}\n\n${payload.body || ""}`;
-
-		// Get existing contact to preserve notes
-		const existingContact = await getContact(ghlContactId);
-		const existingNotes = (existingContact.notes as string) || "";
-
-		// Update contact with message note
-		await updateContact(ghlContactId, {
-			notes: existingNotes ? `${existingNotes}\n\n${messageNote}` : messageNote,
-		});
+		// Add message directly to GHL - conversation will be auto-created if needed
+		// GHL "Add an inbound message" endpoint accepts contactId directly (no conversationId needed)
+		// Docs: https://marketplace.gohighlevel.com/docs/ghl/conversations/messages
+		// Note: Either conversationId OR contactId is required - we use contactId only
+		let ghlMessageId: string | null = null;
+		try {
+			// Call addInboundMessage/sendOutboundMessage directly with just contactId
+			// Don't pass conversationId - let GHL auto-create the conversation
+			if (payload.direction === "inbound") {
+				const { addInboundMessage } = await import("@/lib/ghl/conversations");
+				ghlMessageId = await addInboundMessage(
+					ghlContactId,
+					payload.body || "",
+					{
+						phoneNumber: phone,
+					}
+				);
+			} else {
+				const { sendOutboundMessage } = await import("@/lib/ghl/conversations");
+				ghlMessageId = await sendOutboundMessage(
+					ghlContactId,
+					payload.body || "",
+					{
+						phoneNumber: phone,
+					}
+				);
+			}
+			console.log(`[texting-to-ghl] Successfully created message in GHL: ${ghlMessageId}`);
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			console.error(`[texting-to-ghl] Error creating message in GHL:`, errorMessage);
+			
+			// Still store the mapping - we can retry later
+			ghlMessageId = null;
+		}
 
 		// Store message mapping
 		await db
 			.insert(messageMappings)
 			.values({
 				textingMessageId: payload.messageId || null,
+				ghlMessageId: ghlMessageId || null,
 				ghlContactId,
 				conversationId: payload.conversationId || null,
 				fromNumber: payload.from || null,

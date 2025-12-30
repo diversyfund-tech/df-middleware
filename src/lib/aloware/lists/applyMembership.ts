@@ -5,6 +5,7 @@ import { addContactsToList, removeContactsFromList } from "@/lib/aloware/client"
 import { ensureCallList } from "./ensureCallList";
 import { syncGHLContactToAloware } from "@/lib/sync/ghl-contact-sync";
 import { getContact } from "@/lib/ghl/client";
+import { env } from "@/env";
 
 interface ApplyMembershipChangeParams {
 	ghlContactId: string;
@@ -23,6 +24,23 @@ export async function applyListMembershipChange(
 ): Promise<void> {
 	const { ghlContactId, agentKey, addListKeys, removeListKeys, correlationId } = params;
 	const correlation = correlationId || `membership-${Date.now()}`;
+
+	// TEMPORARILY DISABLED: Check feature flag for Power Dialer lists
+	const enablePowerDialerLists = env.ENABLE_POWER_DIALER_LISTS === "true"; // Default to false (disabled)
+	if (!enablePowerDialerLists) {
+		console.log(`[applyMembership] Power Dialer lists are disabled (ENABLE_POWER_DIALER_LISTS=false), skipping list operations for contact ${ghlContactId}`);
+		await db.insert(syncLog).values({
+			direction: "ghl_to_aloware",
+			entityType: "list",
+			entityId: ghlContactId,
+			sourceId: ghlContactId,
+			status: "skipped",
+			finishedAt: new Date(),
+			errorMessage: "Power Dialer lists are temporarily disabled",
+			correlationId: correlation,
+		});
+		return;
+	}
 
 	try {
 		// Step 1: DNC defensive check - Query optoutRegistry by phone number

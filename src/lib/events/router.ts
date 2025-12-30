@@ -20,6 +20,7 @@ import { resolveAgentForGhlContact } from "@/lib/agents/resolveAgent";
 import { resolveListKeysForEvent } from "@/lib/lists/resolveListIntent";
 import { applyListMembershipChange } from "@/lib/aloware/lists/applyMembership";
 import { detectAndHandleReassignment } from "@/lib/agents/detectReassignment";
+import { handleAlowareListStatusChange } from "@/lib/aloware/sequences/enrollHandler";
 
 type WebhookEvent = typeof webhookEvents.$inferSelect;
 
@@ -110,6 +111,74 @@ async function routeAlowareEvent(event: WebhookEvent, correlationId: string): Pr
 		if (eventTypeLower.includes("disposed")) {
 			await handleContactDisposed(event.entityId, payload, correlationId);
 			return;
+		}
+
+		// Exception: Handle aloware_list_status changes for sequence enrollment
+		// This happens after GHL→Aloware sync updates the contact
+		// TEMPORARILY DISABLED: Check feature flag
+		const enableSequences = env.ENABLE_ALOWARE_SEQUENCES === "true"; // Default to false (disabled)
+		if (enableSequences && (eventTypeLower.includes("updated") || eventTypeLower.includes("changed"))) {
+			// Extract aloware_list_status from payload
+			const customFields = (payload.customFields || payload.custom_fields || payload.custom) as Record<string, unknown> | undefined;
+			const alowareListStatus = customFields?.aloware_list_status as string | undefined;
+			
+			// Extract phone number (required for sequence enrollment)
+			const phoneNumber = (payload.phone_number || payload.phone || payload.phoneNumber) as string | undefined;
+
+			if (alowareListStatus !== undefined && phoneNumber) {
+				// Look up GHL contact ID from mapping (contactAgentState uses GHL contact ID)
+				const mapping = await db.query.contactMappings.findFirst({
+					where: eq(contactMappings.alowareContactId, event.entityId),
+				});
+
+				const ghlContactId = mapping?.ghlContactId;
+
+				// Check if status changed (for idempotency) - only if we have GHL contact ID
+				let previousStatus: string | undefined;
+				if (ghlContactId) {
+					const existingState = await db.query.contactAgentState.findFirst({
+						where: eq(contactAgentState.contactId, ghlContactId),
+					});
+					previousStatus = existingState?.lastAlowareListStatus as string | undefined;
+				}
+				
+				// Only process if status changed (or if we don't have previous status)
+				if (previousStatus !== alowareListStatus) {
+					console.log(`[router] Detected aloware_list_status change: ${previousStatus || "null"} → ${alowareListStatus}`);
+					
+					try {
+						await handleAlowareListStatusChange({
+							phoneNumber,
+							status: alowareListStatus,
+							correlationId,
+						});
+
+						// Update contactAgentState with new status (if we have GHL contact ID)
+						if (ghlContactId) {
+							const existingState = await db.query.contactAgentState.findFirst({
+								where: eq(contactAgentState.contactId, ghlContactId),
+							});
+
+							if (existingState) {
+								await db
+									.update(contactAgentState)
+									.set({
+										lastAlowareListStatus: alowareListStatus,
+										updatedAt: new Date(),
+									})
+									.where(eq(contactAgentState.contactId, ghlContactId));
+							}
+							// Note: We don't create contactAgentState here if it doesn't exist
+							// because we need agentKey. The agent-managed list sync will create it when needed.
+						}
+					} catch (error) {
+						console.error(`[router] Error handling aloware_list_status change:`, error);
+						// Don't throw - continue with normal skip logic
+					}
+				} else {
+					console.log(`[router] aloware_list_status unchanged (${alowareListStatus}), skipping sequence enrollment`);
+				}
+			}
 		}
 
 		// Contact Created/Updated - SKIP (GHL is source of truth)

@@ -334,12 +334,37 @@ export const contactAgentState = pgTable(
 		id: uuid("id").defaultRandom().primaryKey().notNull(),
 		contactId: text("contact_id").notNull(), // GHL contact ID
 		agentKey: text("agent_key").notNull(), // Last known agent key
+		lastAlowareListStatus: text("last_aloware_list_status"), // Last known aloware_list_status value (for idempotency)
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => ({
 		contactIdUnique: uniqueIndex("contact_agent_state_contact_id_unique").on(table.contactId),
 		agentKeyIdx: index("contact_agent_state_agent_key_idx").on(table.agentKey),
+	}),
+);
+
+/**
+ * GHL OAuth Tokens Table
+ * Stores OAuth access tokens for Marketplace App installations
+ * Keyed by location_id for multi-location support
+ */
+export const ghlOauthTokens = pgTable(
+	"ghl_oauth_tokens",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		locationId: text("location_id").notNull().unique(),
+		accessToken: text("access_token").notNull(),
+		refreshToken: text("refresh_token"), // Nullable but expected
+		tokenType: text("token_type").default("Bearer").notNull(),
+		scope: text("scope"),
+		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => ({
+		locationIdUnique: uniqueIndex("ghl_oauth_tokens_location_id_unique").on(table.locationId),
+		expiresAtIdx: index("ghl_oauth_tokens_expires_at_idx").on(table.expiresAt),
 	}),
 );
 

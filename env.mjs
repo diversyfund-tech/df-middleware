@@ -12,6 +12,10 @@ export const env = createEnv({
 		GHL_CALENDAR_ID: z.string().min(1),
 		GHL_BASE_URL: z.string().url().default("https://services.leadconnectorhq.com").optional(),
 		GHL_WEBHOOK_SECRET: z.string().optional(),
+		GHL_CONVERSATION_PROVIDER_ID: z.string().optional(), // Required for importing historical messages
+		// GHL OAuth Configuration (for Marketplace App)
+		GHL_CLIENT_ID: z.string().optional(),
+		GHL_CLIENT_SECRET: z.string().optional(),
 		// Aloware Configuration
 		ALOWARE_API_TOKEN: z.string().min(1),
 		ALOWARE_WEBHOOK_BASIC_USER: z.string().min(1),
@@ -25,6 +29,7 @@ export const env = createEnv({
 		VERITY_BASE_URL: z.string().url().optional(),
 		VERITY_API_KEY: z.string().optional(),
 		VERITY_WEBHOOK_SECRET: z.string().optional(),
+		VERITY_DATABASE_URL: z.string().url().optional(), // Verity's Neon database connection
 		TEXTING_SYNC_TO_ALOWARE: z.string().optional(),
 		// Admin Configuration
 		DF_ADMIN_SECRET: z.string().min(1),
@@ -65,6 +70,23 @@ export const env = createEnv({
 			},
 			z.enum(["exact", "case_insensitive", "regex"]).default("case_insensitive")
 		),
+		// Aloware Sequence Configuration
+		ALOWARE_STATUS_TO_SEQUENCE: z.preprocess(
+			(val) => {
+				if (!val || val === "") return "{}";
+				try {
+					// Validate it's valid JSON
+					JSON.parse(String(val));
+					return String(val);
+				} catch {
+					return "{}";
+				}
+			},
+			z.string().default("{}")
+		),
+		// Feature Flags
+		ENABLE_ALOWARE_SEQUENCES: z.string().default("false"), // Disable sequences temporarily
+		ENABLE_POWER_DIALER_LISTS: z.string().default("false"), // Disable power dialer lists temporarily
 	},
 	client: {},
 	runtimeEnv: {
@@ -76,6 +98,9 @@ export const env = createEnv({
 		GHL_CALENDAR_ID: process.env.GHL_CALENDAR_ID,
 		GHL_BASE_URL: process.env.GHL_BASE_URL,
 		GHL_WEBHOOK_SECRET: process.env.GHL_WEBHOOK_SECRET,
+		GHL_CONVERSATION_PROVIDER_ID: process.env.GHL_CONVERSATION_PROVIDER_ID,
+		GHL_CLIENT_ID: process.env.GHL_CLIENT_ID,
+		GHL_CLIENT_SECRET: process.env.GHL_CLIENT_SECRET,
 		ALOWARE_API_TOKEN: process.env.ALOWARE_API_TOKEN,
 		ALOWARE_WEBHOOK_BASIC_USER: process.env.ALOWARE_WEBHOOK_BASIC_USER,
 		ALOWARE_WEBHOOK_BASIC_PASS: process.env.ALOWARE_WEBHOOK_BASIC_PASS,
@@ -85,6 +110,7 @@ export const env = createEnv({
 		VERITY_BASE_URL: process.env.VERITY_BASE_URL,
 		VERITY_API_KEY: process.env.VERITY_API_KEY,
 		VERITY_WEBHOOK_SECRET: process.env.VERITY_WEBHOOK_SECRET,
+		VERITY_DATABASE_URL: process.env.VERITY_DATABASE_URL,
 		TEXTING_SYNC_TO_ALOWARE: process.env.TEXTING_SYNC_TO_ALOWARE,
 		DF_ADMIN_SECRET: process.env.DF_ADMIN_SECRET,
 		CONTACT_SOURCE_OF_TRUTH: process.env.CONTACT_SOURCE_OF_TRUTH,
@@ -94,6 +120,9 @@ export const env = createEnv({
 		GHL_ASSIGNED_AGENT_FIELD_KEY: process.env.GHL_ASSIGNED_AGENT_FIELD_KEY,
 		ENABLE_AGENT_LIST_SYNC: process.env.ENABLE_AGENT_LIST_SYNC,
 		TAG_MATCH_MODE: process.env.TAG_MATCH_MODE,
+		ALOWARE_STATUS_TO_SEQUENCE: process.env.ALOWARE_STATUS_TO_SEQUENCE,
+		ENABLE_ALOWARE_SEQUENCES: process.env.ENABLE_ALOWARE_SEQUENCES,
+		ENABLE_POWER_DIALER_LISTS: process.env.ENABLE_POWER_DIALER_LISTS,
 	},
 	skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
 });

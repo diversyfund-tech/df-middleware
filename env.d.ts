@@ -9,6 +9,9 @@ declare module "@/env" {
 		GHL_CALENDAR_ID: string;
 		GHL_BASE_URL?: string;
 		GHL_WEBHOOK_SECRET?: string;
+		GHL_CONVERSATION_PROVIDER_ID?: string;
+		GHL_CLIENT_ID?: string;
+		GHL_CLIENT_SECRET?: string;
 		// Aloware Configuration
 		ALOWARE_API_TOKEN: string;
 		ALOWARE_WEBHOOK_BASIC_USER: string;
@@ -34,6 +37,11 @@ declare module "@/env" {
 		GHL_ASSIGNED_AGENT_FIELD_KEY: string;
 		ENABLE_AGENT_LIST_SYNC: string;
 		TAG_MATCH_MODE: "exact" | "case_insensitive" | "regex";
+		// Aloware Sequence Configuration
+		ALOWARE_STATUS_TO_SEQUENCE: string;
+		// Feature Flags
+		ENABLE_ALOWARE_SEQUENCES: string;
+		ENABLE_POWER_DIALER_LISTS: string;
 	};
 }
 

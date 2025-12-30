@@ -579,3 +579,172 @@ export async function clearCallList(
 	return await response.json() as { message: string };
 }
 
+/**
+ * Enroll a contact in an Aloware sequence
+ * Uses: POST /api/v1/webhook/sequence-enroll
+ */
+export async function enrollContactInSequence(
+	phoneNumber: string,
+	sequenceId: string,
+	forceEnroll: boolean = true
+): Promise<{ message: string }> {
+	const apiToken = env.ALOWARE_API_TOKEN;
+	if (!apiToken) {
+		throw new Error("ALOWARE_API_TOKEN is not configured");
+	}
+
+	// Normalize phone number (remove non-digits, keep + if present)
+	const normalizedPhone = phoneNumber.replace(/[^\d+]/g, "");
+
+	const payload = {
+		api_token: apiToken,
+		sequence_id: sequenceId,
+		force_enroll: forceEnroll,
+		source: "phone_number",
+		phone_number: normalizedPhone,
+	};
+
+	const response = await fetch(`${ALOWARE_API_BASE_URL}/webhook/sequence-enroll`, {
+		method: "POST",
+		headers: {
+			"Accept": "application/json",
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify(payload),
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text().catch(() => "Unknown error");
+		console.error(`[aloware] API request failed: ${ALOWARE_API_BASE_URL}/webhook/sequence-enroll`);
+		console.error(`[aloware] Response status: ${response.status} ${response.statusText}`);
+		console.error(`[aloware] Response body: ${errorText.substring(0, 500)}`);
+		throw new Error(
+			`Aloware API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`,
+		);
+	}
+
+	return await response.json() as { message: string };
+}
+
+/**
+ * Disenroll a contact from all Aloware sequences
+ * Uses: POST /api/v1/webhook/sequence-disenroll
+ * Safe to call even if not enrolled (swallows errors)
+ */
+export async function disenrollContactFromAllSequences(
+	phoneNumber: string
+): Promise<{ message: string } | null> {
+	const apiToken = env.ALOWARE_API_TOKEN;
+	if (!apiToken) {
+		throw new Error("ALOWARE_API_TOKEN is not configured");
+	}
+
+	// Normalize phone number (remove non-digits, keep + if present)
+	const normalizedPhone = phoneNumber.replace(/[^\d+]/g, "");
+
+	const payload = {
+		api_token: apiToken,
+		source: "phone_number",
+		phone_number: normalizedPhone,
+	};
+
+	try {
+		const response = await fetch(`${ALOWARE_API_BASE_URL}/webhook/sequence-disenroll`, {
+			method: "POST",
+			headers: {
+				"Accept": "application/json",
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(payload),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text().catch(() => "Unknown error");
+			// Swallow errors - safe to call even if not enrolled
+			console.warn(`[aloware] Sequence disenroll returned ${response.status}: ${errorText.substring(0, 200)}`);
+			return null;
+		}
+
+		return await response.json() as { message: string };
+	} catch (error) {
+		// Swallow errors - safe operation
+		console.warn(`[aloware] Error disenrolling from sequences (swallowed):`, error);
+		return null;
+	}
+}
+
+/**
+ * Get contact ID by phone number (helper for Power Dialer list removal)
+ * Uses: GET /api/v1/webhook/contact/phone-number
+ */
+export async function getContactIdByPhone(phoneNumber: string): Promise<string | null> {
+	try {
+		const contacts = await searchContacts(phoneNumber);
+		return contacts.length > 0 ? contacts[0]!.id : null;
+	} catch (error) {
+		console.error(`[aloware] Error getting contact ID by phone:`, error);
+		return null;
+	}
+}
+
+/**
+ * Get all sequences
+ * Uses: GET /api/v1/sequences (or similar endpoint - may need to verify with Aloware docs)
+ * NOTE: This endpoint may not exist - check Aloware API documentation
+ */
+export async function getSequences(): Promise<Array<{ id: string; name: string; [key: string]: unknown }>> {
+	try {
+		const data = await alowareRequest<{ data?: Array<{ id: string; name: string; [key: string]: unknown }>; sequences?: Array<{ id: string; name: string; [key: string]: unknown }> }>(
+			"/sequences"
+		);
+
+		if (data.data) return data.data;
+		if (data.sequences) return data.sequences;
+		return [];
+	} catch (error) {
+		console.error("[aloware] Error fetching sequences:", error);
+		// If endpoint doesn't exist, return empty array
+		return [];
+	}
+}
+
+/**
+ * Create a sequence
+ * Uses: POST /api/v1/sequences (or similar endpoint - may need to verify with Aloware docs)
+ * NOTE: This endpoint may not exist - sequences may need to be created manually in Aloware
+ */
+export async function createSequence(
+	sequence: { name: string; description?: string; [key: string]: unknown }
+): Promise<{ id: string; name: string; [key: string]: unknown }> {
+	const apiToken = env.ALOWARE_API_TOKEN;
+	if (!apiToken) {
+		throw new Error("ALOWARE_API_TOKEN is not configured");
+	}
+
+	const payload = {
+		...sequence,
+		api_token: apiToken,
+	};
+
+	const response = await fetch(`${ALOWARE_API_BASE_URL}/sequences`, {
+		method: "POST",
+		headers: {
+			"Accept": "application/json",
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify(payload),
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text().catch(() => "Unknown error");
+		console.error(`[aloware] API request failed: ${ALOWARE_API_BASE_URL}/sequences`);
+		console.error(`[aloware] Response status: ${response.status} ${response.statusText}`);
+		console.error(`[aloware] Response body: ${errorText.substring(0, 500)}`);
+		throw new Error(
+			`Aloware API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 200)}`,
+		);
+	}
+
+	return await response.json() as { id: string; name: string; [key: string]: unknown };
+}
+

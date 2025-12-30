@@ -1,0 +1,1 @@
+ALTER TABLE "contact_agent_state" ADD COLUMN "last_aloware_list_status" text;

@@ -1,4 +1,5 @@
 import { env } from "@/env";
+import { getGhlAccessToken } from "./oauth-tokens";
 
 const GHL_API_BASE_URL = env.GHL_BASE_URL || "https://services.leadconnectorhq.com";
 
@@ -6,32 +7,56 @@ const GHL_API_BASE_URL = env.GHL_BASE_URL || "https://services.leadconnectorhq.c
  * GoHighLevel API Client
  * 
  * Provides functions to interact with GoHighLevel API.
- * Uses Private Integration Token (PIT) for authentication.
+ * Uses Private Integration Token (PIT) for authentication by default.
+ * Uses OAuth tokens for Marketplace App provider-related calls.
  */
 
 /**
  * Make authenticated request to GHL API
  * 
  * IMPORTANT: Location scoping is via `locationId` query param, NOT `Location-Id` header
+ * 
+ * @param endpoint - API endpoint path
+ * @param options - Request options
+ * @param useOAuth - If true, use OAuth token instead of PIT (required for Marketplace App providers)
  */
-async function ghlRequest<T>(
+export async function ghlRequest<T>(
 	endpoint: string,
-	options: RequestInit = {}
+	options: RequestInit = {},
+	useOAuth: boolean = false
 ): Promise<T> {
-	const apiKey = env.GHL_API_KEY;
 	const locationId = env.GHL_LOCATION_ID;
 	
-	if (!apiKey) {
-		throw new Error("GHL_API_KEY is not configured");
-	}
 	if (!locationId) {
 		throw new Error("GHL_LOCATION_ID is not configured");
 	}
 
+	// Determine authentication method
+	let authToken: string;
+	let authMethod: string;
+	
+	if (useOAuth) {
+		authToken = await getGhlAccessToken(locationId);
+		authMethod = "OAuth";
+	} else {
+		const apiKey = env.GHL_API_KEY;
+		if (!apiKey) {
+			throw new Error("GHL_API_KEY is not configured");
+		}
+		authToken = apiKey;
+		authMethod = "PIT";
+	}
+
+	console.log(`[GHL] Using ${authMethod} authentication for ${endpoint}`);
+
 	// Add locationId as query param if endpoint doesn't already have query params
-	// EXCEPTION: free-slots endpoint doesn't accept locationId
+	// EXCEPTIONS:
+	// - free-slots endpoint doesn't accept locationId
+	// - conversations/messages/inbound and /outbound might not need locationId in query (it's in body)
 	let url = `${GHL_API_BASE_URL}${endpoint}`;
-	if (!endpoint.includes("/free-slots")) {
+	if (!endpoint.includes("/free-slots") && 
+	    !endpoint.includes("/conversations/messages/inbound") && 
+	    !endpoint.includes("/conversations/messages/outbound")) {
 		if (!endpoint.includes("?")) {
 			url = `${url}?locationId=${locationId}`;
 		} else if (!endpoint.includes("locationId=")) {
@@ -42,7 +67,7 @@ async function ghlRequest<T>(
 	const response = await fetch(url, {
 		...options,
 		headers: {
-			"Authorization": `Bearer ${apiKey}`,
+			"Authorization": `Bearer ${authToken}`,
 			"Accept": "application/json",
 			"Version": "2021-07-28",
 			...(options.method === "POST" || options.method === "PUT" ? { "Content-Type": "application/json" } : {}),
@@ -52,6 +77,7 @@ async function ghlRequest<T>(
 
 	if (!response.ok) {
 		const errorText = await response.text().catch(() => "Unknown error");
+		const fullUrl = response.url || url;
 		let errorMessage = `GHL API error (${response.status}): ${errorText}`;
 		
 		// Try to parse JSON error if available
@@ -60,11 +86,19 @@ async function ghlRequest<T>(
 			if (errorJson.message) {
 				errorMessage = `GHL API error (${response.status}): ${errorJson.message}`;
 			}
+			// Log full error details for debugging
+			console.error("[GHL] Full API error response:", JSON.stringify(errorJson, null, 2));
+			console.error("[GHL] Request URL:", fullUrl);
 		} catch {
 			// Not JSON, use text as-is
+			console.error("[GHL] Full API error response (text):", errorText);
+			console.error("[GHL] Request URL:", fullUrl);
 		}
 		
-		throw new Error(errorMessage);
+		// Include URL in error for better debugging
+		const enhancedError = new Error(errorMessage);
+		(enhancedError as { url?: string }).url = fullUrl;
+		throw enhancedError;
 	}
 
 	return response.json() as Promise<T>;

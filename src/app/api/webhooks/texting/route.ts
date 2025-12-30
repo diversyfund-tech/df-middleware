@@ -12,7 +12,13 @@ export const dynamic = "force-dynamic";
  */
 function validateTextingSecret(req: NextRequest): boolean {
 	const secret = req.headers.get("X-Texting-Secret");
-	return secret === env.VERITY_WEBHOOK_SECRET;
+	const expectedSecret = env.VERITY_WEBHOOK_SECRET?.trim();
+	
+	if (!secret || !expectedSecret) {
+		return false;
+	}
+	
+	return secret.trim() === expectedSecret;
 }
 
 /**
