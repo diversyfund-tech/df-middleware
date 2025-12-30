@@ -158,7 +158,8 @@ export async function addInboundMessage(
 			contactId,
 			conversationProviderId,
 			message,
-			type: "SMS", // Required - must match provider type exactly
+			// Note: type field removed - import endpoints may not require it
+			// If needed, GHL will infer from conversationProviderId
 		};
 
 		// conversationId is optional - GHL will auto-create conversation if not provided
@@ -273,7 +274,8 @@ export async function sendOutboundMessage(
 			contactId,
 			conversationProviderId,
 			message,
-			type: "SMS", // Required - must match provider type exactly
+			// Note: type field removed - import endpoints may not require it
+			// If needed, GHL will infer from conversationProviderId
 		};
 
 		// conversationId is optional - GHL will auto-create conversation if not provided
