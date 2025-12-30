@@ -158,8 +158,7 @@ export async function addInboundMessage(
 			contactId,
 			conversationProviderId,
 			message,
-			// Note: type field removed - import endpoints may not require it
-			// If needed, GHL will infer from conversationProviderId
+			type: "sms", // Try lowercase - GHL enum might be case-sensitive
 		};
 
 		// conversationId is optional - GHL will auto-create conversation if not provided
@@ -274,8 +273,7 @@ export async function sendOutboundMessage(
 			contactId,
 			conversationProviderId,
 			message,
-			// Note: type field removed - import endpoints may not require it
-			// If needed, GHL will infer from conversationProviderId
+			type: "sms", // Try lowercase - GHL enum might be case-sensitive
 		};
 
 		// conversationId is optional - GHL will auto-create conversation if not provided
