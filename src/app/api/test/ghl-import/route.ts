@@ -25,10 +25,11 @@ export async function POST(req: NextRequest) {
 		}
 
 		// Verify locationId matches configured location
-		const configuredLocationId = env.GHL_LOCATION_ID;
-		if (locationId !== configuredLocationId) {
+		const configuredLocationId = env.GHL_LOCATION_ID?.trim();
+		const trimmedLocationId = locationId?.trim();
+		if (trimmedLocationId !== configuredLocationId) {
 			return NextResponse.json(
-				{ error: `Location ID mismatch. Expected ${configuredLocationId}, got ${locationId}` },
+				{ error: `Location ID mismatch. Expected ${configuredLocationId}, got ${trimmedLocationId}` },
 				{ status: 400 }
 			);
 		}

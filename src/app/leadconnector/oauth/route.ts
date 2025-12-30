@@ -44,11 +44,16 @@ export async function GET(req: NextRequest) {
 		}, { status: 400 });
 	}
 
-	const clientId = env.GHL_CLIENT_ID;
-	const clientSecret = env.GHL_CLIENT_SECRET;
+	const clientId = env.GHL_CLIENT_ID?.trim();
+	const clientSecret = env.GHL_CLIENT_SECRET?.trim();
 
 	if (!clientId || !clientSecret) {
-		console.error("[ghl.oauth] Missing OAuth credentials");
+		console.error("[ghl.oauth] Missing OAuth credentials", {
+			hasClientId: !!env.GHL_CLIENT_ID,
+			hasClientSecret: !!env.GHL_CLIENT_SECRET,
+			clientIdLength: env.GHL_CLIENT_ID?.length,
+			clientSecretLength: env.GHL_CLIENT_SECRET?.length,
+		});
 		return NextResponse.json({
 			success: false,
 			error: "missing_credentials",
@@ -64,10 +69,16 @@ export async function GET(req: NextRequest) {
 		
 		// Build form-encoded body (OAuth2 standard)
 		const params = new URLSearchParams({
-			client_id: clientId,
-			client_secret: clientSecret,
+			client_id: clientId.trim(),
+			client_secret: clientSecret.trim(),
 			grant_type: "authorization_code",
-			code: code,
+			code: code.trim(),
+			redirect_uri: (req.nextUrl.origin + "/leadconnector/oauth").trim(),
+		});
+		
+		console.log("[ghl.oauth] Token exchange params:", {
+			client_id: clientId.substring(0, 10) + "...",
+			has_client_secret: !!clientSecret,
 			redirect_uri: req.nextUrl.origin + "/leadconnector/oauth",
 		});
 		
