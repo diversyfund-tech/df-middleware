@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/env";
+import { getGhlAccessToken } from "@/lib/ghl/oauth-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -7,18 +8,37 @@ export const dynamic = "force-dynamic";
  * Get GHL Conversation Providers
  * 
  * Fetches all conversation providers for the location to find the conversationProviderId
+ * Uses OAuth token since Marketplace App providers require OAuth
  * 
  * GET /api/test/get-ghl-providers
  */
 export async function GET(req: NextRequest) {
 	try {
-		const locationId = env.GHL_LOCATION_ID;
-		const apiKey = env.GHL_API_KEY;
-
-		if (!locationId || !apiKey) {
+		const locationId = env.GHL_LOCATION_ID?.trim();
+		
+		if (!locationId) {
 			return NextResponse.json({
-				error: "GHL_LOCATION_ID and GHL_API_KEY must be configured",
+				error: "GHL_LOCATION_ID must be configured",
 			}, { status: 500 });
+		}
+
+		// Try to get OAuth token (required for Marketplace App providers)
+		let authToken: string;
+		let authMethod: string;
+		try {
+			authToken = await getGhlAccessToken(locationId);
+			authMethod = "OAuth";
+		} catch (error) {
+			// Fallback to PIT if OAuth not available
+			const apiKey = env.GHL_API_KEY;
+			if (!apiKey) {
+				return NextResponse.json({
+					error: "OAuth token not found and GHL_API_KEY not configured. Please install the Marketplace App first.",
+					details: error instanceof Error ? error.message : String(error),
+				}, { status: 500 });
+			}
+			authToken = apiKey;
+			authMethod = "PIT";
 		}
 
 		// Fetch providers from GHL API
@@ -35,11 +55,11 @@ export async function GET(req: NextRequest) {
 
 		for (const url of endpoints) {
 			try {
-				console.log("[get-ghl-providers] Trying endpoint:", url);
+				console.log(`[get-ghl-providers] Trying endpoint with ${authMethod}:`, url);
 				response = await fetch(url, {
 					method: "GET",
 					headers: {
-						"Authorization": `Bearer ${apiKey}`,
+						"Authorization": `Bearer ${authToken}`,
 						"Accept": "application/json",
 						"Version": "2021-07-28",
 					},
@@ -97,6 +117,8 @@ export async function GET(req: NextRequest) {
 		return NextResponse.json({
 			success: true,
 			locationId,
+			authMethod,
+			currentProviderId: env.GHL_CONVERSATION_PROVIDER_ID?.trim(),
 			totalProviders: providers.length,
 			smsProviders: smsProviders.length,
 			ourProviders: ourProviders.length,
@@ -107,7 +129,8 @@ export async function GET(req: NextRequest) {
 				step1: "Look for your SMS provider in 'smsProvidersList' or 'allProviders'",
 				step2: "Find the provider with name matching your Marketplace App",
 				step3: "Copy the 'id' field - that's your conversationProviderId",
-				step4: "Add to .env.local: GHL_CONVERSATION_PROVIDER_ID=<id>",
+				step4: "Compare with 'currentProviderId' above to verify it matches",
+				step5: "If different, update .env.local: GHL_CONVERSATION_PROVIDER_ID=<id>",
 			},
 		});
 
