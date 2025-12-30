@@ -8,9 +8,11 @@ import { env } from "@/env";
  * Automatically refreshes if expired or near-expiry (within 5 minutes)
  */
 export async function getGhlAccessToken(locationId: string): Promise<string> {
+	// Trim locationId to handle any whitespace/newlines
+	const trimmedLocationId = locationId.trim();
 	// Load token from database
 	const tokenRow = await db.query.ghlOauthTokens.findFirst({
-		where: eq(ghlOauthTokens.locationId, locationId),
+		where: eq(ghlOauthTokens.locationId, trimmedLocationId),
 	});
 
 	if (!tokenRow) {
@@ -95,7 +97,7 @@ async function refreshGhlAccessToken(locationId: string, refreshToken: string): 
 			expiresAt,
 			updatedAt: new Date(),
 		})
-		.where(eq(ghlOauthTokens.locationId, locationId));
+		.where(eq(ghlOauthTokens.locationId, trimmedLocationId));
 
 	console.log(`[GHL OAuth] Token refreshed successfully for location ${locationId}`);
 
@@ -115,6 +117,8 @@ export async function storeGhlOauthTokens(
 		expires_in?: number;
 	}
 ): Promise<void> {
+	// Trim locationId to handle any whitespace/newlines
+	const trimmedLocationId = locationId.trim();
 	// Compute expires_at from expires_in (typically in seconds)
 	const expiresIn = tokenData.expires_in || 3600; // Default to 1 hour if not provided
 	const expiresAt = new Date(Date.now() + expiresIn * 1000);
@@ -123,7 +127,7 @@ export async function storeGhlOauthTokens(
 	await db
 		.insert(ghlOauthTokens)
 		.values({
-			locationId,
+			locationId: trimmedLocationId,
 			accessToken: tokenData.access_token,
 			refreshToken: tokenData.refresh_token || null,
 			tokenType: tokenData.token_type || "Bearer",
@@ -142,6 +146,6 @@ export async function storeGhlOauthTokens(
 			},
 		});
 
-	console.log(`[GHL OAuth] Tokens stored for location ${locationId}`);
+		console.log(`[GHL OAuth] Tokens stored for location ${trimmedLocationId}`);
 }
 

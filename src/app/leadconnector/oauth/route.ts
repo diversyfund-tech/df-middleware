@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
 		console.log("[ghl.oauth] Token exchange successful");
 
 		// Extract location ID from token response (GHL typically includes this)
-		const locationId = tokenData.locationId || tokenData.location_id || state;
+		const locationId = (tokenData.locationId || tokenData.location_id || state)?.trim();
 
 		if (!locationId) {
 			throw new Error("Location ID not found in token response or state");
