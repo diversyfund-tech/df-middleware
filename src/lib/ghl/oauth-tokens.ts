@@ -45,6 +45,8 @@ export async function getGhlAccessToken(locationId: string): Promise<string> {
  * Refresh GHL OAuth access token using refresh token
  */
 async function refreshGhlAccessToken(locationId: string, refreshToken: string): Promise<string> {
+	// Trim locationId to handle any whitespace/newlines
+	const trimmedLocationId = locationId.trim();
 	const clientId = env.GHL_CLIENT_ID;
 	const clientSecret = env.GHL_CLIENT_SECRET;
 
