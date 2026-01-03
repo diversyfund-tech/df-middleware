@@ -89,11 +89,11 @@ export async function syncTextingMessageToGHL(
 		// Add message directly to GHL - conversation will be auto-created if needed
 		// GHL "Add an inbound message" endpoint accepts contactId directly (no conversationId needed)
 		// Docs: https://marketplace.gohighlevel.com/docs/ghl/conversations/messages
-		// Note: Either conversationId OR contactId is required - we use contactId only
+		// Note: Either conversationId OR contactId is required - we use contactId for inbound, conversationId for outbound
 		let ghlMessageId: string | null = null;
 		try {
-			// Call addInboundMessage/sendOutboundMessage directly with just contactId
-			// Don't pass conversationId - let GHL auto-create the conversation
+			// For inbound: conversationId is optional (GHL will auto-create)
+			// For outbound: conversationId is required by GHL API, use from payload if available
 			if (payload.direction === "inbound") {
 				const { addInboundMessage } = await import("@/lib/ghl/conversations");
 				ghlMessageId = await addInboundMessage(
@@ -101,6 +101,7 @@ export async function syncTextingMessageToGHL(
 					payload.body || "",
 					{
 						phoneNumber: phone,
+						conversationId: payload.conversationId || undefined, // Use if available for consistency
 					}
 				);
 			} else {
@@ -110,6 +111,7 @@ export async function syncTextingMessageToGHL(
 					payload.body || "",
 					{
 						phoneNumber: phone,
+						conversationId: payload.conversationId || undefined, // Use Verity's conversationId if available
 					}
 				);
 			}
