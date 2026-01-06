@@ -24,6 +24,7 @@ declare module "@/env" {
 		VERITY_BASE_URL?: string;
 		VERITY_API_KEY?: string;
 		VERITY_WEBHOOK_SECRET?: string;
+		VERITY_DATABASE_URL?: string;
 		TEXTING_SYNC_TO_ALOWARE?: string;
 		// Admin Configuration
 		DF_ADMIN_SECRET: string;
