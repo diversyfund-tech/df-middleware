@@ -51,3 +51,8 @@ export function getBoss(): PgBoss {
  */
 export const WEBHOOK_EVENT_QUEUE = "process-webhook-event";
 
+/**
+ * Job queue name for broadcast event processing
+ */
+export const BROADCAST_EVENT_QUEUE = "process-broadcast-event";
+

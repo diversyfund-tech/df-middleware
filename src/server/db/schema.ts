@@ -146,6 +146,31 @@ export const textingWebhookEvents = pgTable(
 );
 
 /**
+ * Broadcast Webhook Events Table
+ * Stores incoming webhook events from Verity for broadcast analytics sync
+ */
+export const broadcastWebhookEvents = pgTable(
+	"broadcast_webhook_events",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+		broadcastId: text("broadcast_id").notNull(),
+		eventType: text("event_type").notNull(), // 'analytics_updated' | 'broadcast_completed'
+		payloadJson: jsonb("payload_json").notNull(),
+		dedupeKey: text("dedupe_key").notNull(),
+		status: text("status").default("pending").notNull(), // 'pending' | 'processing' | 'done' | 'error'
+		errorMessage: text("error_message"),
+		processedAt: timestamp("processed_at", { withTimezone: true }),
+	},
+	(table) => ({
+		dedupeKeyUnique: uniqueIndex("broadcast_webhook_events_dedupe_key_unique").on(table.dedupeKey),
+		statusIdx: index("broadcast_webhook_events_status_idx").on(table.status),
+		broadcastIdIdx: index("broadcast_webhook_events_broadcast_id_idx").on(table.broadcastId),
+		receivedAtIdx: index("broadcast_webhook_events_received_at_idx").on(table.receivedAt),
+	}),
+);
+
+/**
  * Message Mappings Table
  * Maps messages across texting system, GHL, and Aloware
  */

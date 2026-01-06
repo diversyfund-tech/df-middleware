@@ -1,5 +1,5 @@
 import { db } from "@/server/db";
-import { syncLog, webhookEvents, contactMappings, contactAgentState } from "@/server/db/schema";
+import { syncLog, webhookEvents, contactMappings, contactAgentState, broadcastWebhookEvents } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { syncAlowareContactToGHL } from "@/lib/sync/contact-sync";
 import { syncAlowareCallToGHL } from "@/lib/sync/call-sync";
@@ -21,6 +21,8 @@ import { resolveListKeysForEvent } from "@/lib/lists/resolveListIntent";
 import { applyListMembershipChange } from "@/lib/aloware/lists/applyMembership";
 import { detectAndHandleReassignment } from "@/lib/agents/detectReassignment";
 import { handleAlowareListStatusChange } from "@/lib/aloware/sequences/enrollHandler";
+import { findBroadcastsForContactByPhoneOrEmail } from "@/lib/broadcasts/find-broadcasts-by-contact";
+import { startBoss, BROADCAST_EVENT_QUEUE } from "@/lib/jobs/boss";
 
 type WebhookEvent = typeof webhookEvents.$inferSelect;
 
@@ -478,6 +480,85 @@ async function routeGhLEvent(event: WebhookEvent, correlationId: string): Promis
 					correlationId,
 				});
 			}
+		}
+		return;
+	}
+
+	// Handle appointment events - trigger broadcast analytics recalculation
+	if (event.entityType === "appointment" || event.eventType.includes("appointment")) {
+		try {
+			const payload = event.payloadJson as any;
+			const contactId = payload.contactId || payload.contact?.id || event.entityId;
+			const phone = payload.phone || payload.contact?.phone;
+			const email = payload.email || payload.contact?.email;
+
+			if (contactId || phone || email) {
+				console.log(`[router] Processing appointment event for contact ${contactId || phone || email}`);
+
+				// Find broadcasts for this contact
+				let broadcastIds: string[] = [];
+				if (contactId) {
+					// Try to find contact in Verity DB by matching GHL contact ID
+					// Note: We need to match by phone/email since Verity uses its own contact IDs
+					// For now, use phone/email matching
+					broadcastIds = await findBroadcastsForContactByPhoneOrEmail(phone, email);
+				} else {
+					broadcastIds = await findBroadcastsForContactByPhoneOrEmail(phone, email);
+				}
+
+				if (broadcastIds.length > 0) {
+					console.log(`[router] Found ${broadcastIds.length} broadcasts for contact, triggering analytics recalculation`);
+
+					// Enqueue broadcast analytics recalculation for each affected broadcast
+					const boss = await startBoss();
+					const { createHash } = await import("crypto");
+					
+					for (const broadcastId of broadcastIds) {
+						try {
+							// Create a broadcast webhook event to trigger recalculation
+							const dedupeKey = createHash("sha256")
+								.update(`broadcast:${broadcastId}:analytics_updated:appointment:${Date.now()}`)
+								.digest("hex")
+								.substring(0, 16);
+
+							const inserted = await db
+								.insert(broadcastWebhookEvents)
+								.values({
+									broadcastId,
+									eventType: "analytics_updated",
+									payloadJson: {
+										triggeredBy: "ghl_appointment",
+										appointmentId: event.entityId,
+										contactId,
+									},
+									dedupeKey: `broadcast:${broadcastId}:analytics_updated:appointment:${dedupeKey}`,
+									status: "pending",
+								})
+								.returning({ id: broadcastWebhookEvents.id })
+								.onConflictDoNothing({ target: broadcastWebhookEvents.dedupeKey });
+
+							if (inserted && inserted.length > 0) {
+								await boss.send(BROADCAST_EVENT_QUEUE, {
+									broadcastEventId: inserted[0].id,
+								}, {
+									retryLimit: 10,
+									retryDelay: 60,
+									retryBackoff: true,
+								});
+								console.log(`[router] Enqueued broadcast analytics recalculation for broadcast ${broadcastId}`);
+							}
+						} catch (enqueueError) {
+							console.error(`[router] Error enqueueing broadcast recalculation for ${broadcastId}:`, enqueueError);
+							// Don't throw - continue with other broadcasts
+						}
+					}
+				} else {
+					console.log(`[router] No broadcasts found for contact ${contactId || phone || email}`);
+				}
+			}
+		} catch (error) {
+			console.error(`[router] Error processing appointment event:`, error);
+			// Don't throw - appointment webhook processing continues
 		}
 		return;
 	}
