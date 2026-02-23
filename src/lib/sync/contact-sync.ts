@@ -3,6 +3,9 @@ import { contactMappings, syncLog } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { syncContactToGHL, findGHLContact } from "@/lib/ghl/contacts";
 import type { AlowareContact } from "@/lib/aloware/types";
+import { logger } from "@/lib/logger";
+import { syncOperationsTotal, syncOperationDuration } from "@/lib/metrics";
+import { SYNC_DIRECTION, ENTITY_TYPE, SYNC_STATUS } from "@/lib/constants";
 
 /**
  * Sync Aloware contact to GHL
@@ -56,12 +59,12 @@ export async function syncAlowareContactToGHL(
 
 			// Log success
 			await db.insert(syncLog).values({
-				direction: "aloware_to_ghl",
-				entityType: "contact",
+				direction: SYNC_DIRECTION.ALOWARE_TO_GHL,
+				entityType: ENTITY_TYPE.CONTACT,
 				entityId: alowareContactId,
 				sourceId: alowareContactId,
 				targetId: ghlContact,
-				status: "success",
+				status: SYNC_STATUS.SUCCESS,
 				finishedAt: new Date(),
 				correlationId: correlation,
 			});
@@ -133,12 +136,12 @@ export async function syncAlowareContactToGHL(
 
 			// Log success
 			await db.insert(syncLog).values({
-				direction: "aloware_to_ghl",
-				entityType: "contact",
+				direction: SYNC_DIRECTION.ALOWARE_TO_GHL,
+				entityType: ENTITY_TYPE.CONTACT,
 				entityId: alowareContactId,
 				sourceId: alowareContactId,
 				targetId: ghlContactId,
-				status: "success",
+				status: SYNC_STATUS.SUCCESS,
 				finishedAt: new Date(),
 				correlationId: correlation,
 			});
@@ -146,16 +149,16 @@ export async function syncAlowareContactToGHL(
 			return ghlContactId;
 		}
 	} catch (error) {
-		console.error("[contact-sync] Error syncing contact:", error);
+		logger.error({ alowareContactId, error }, "Error syncing contact");
 		const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
 		// Log error
 		await db.insert(syncLog).values({
-			direction: "aloware_to_ghl",
-			entityType: "contact",
+			direction: SYNC_DIRECTION.ALOWARE_TO_GHL,
+			entityType: ENTITY_TYPE.CONTACT,
 			entityId: alowareContactId,
 			sourceId: alowareContactId,
-			status: "error",
+			status: SYNC_STATUS.ERROR,
 			finishedAt: new Date(),
 			errorMessage,
 			correlationId: correlation,

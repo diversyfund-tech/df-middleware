@@ -1,0 +1,10 @@
+{
+  "eventType": "message.sent",
+  "direction": "outbound",
+  "from": "+15559876543",
+  "to": "+19492459055",
+  "body": "Test message from Verity - simulated retry",
+  "messageId": "test_msg_simulated_verity_retry",
+  "timestamp": "2025-01-27T12:00:00Z"
+}
+

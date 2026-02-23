@@ -121,3 +121,6 @@ npm search ghl-cli
 
 **Note:** The standard GHL API (what we're using for contacts/conversations) uses Private Integration Tokens. The Developer/Marketplace API likely uses OAuth 2.0 and requires different credentials.
 
+
+
+

@@ -38,3 +38,6 @@ SELECT scope FROM ghl_oauth_tokens WHERE location_id = 'CTaxuyy2bMObvSaBQRxY';
 - `conversations.messages.write` - To import messages
 - Provider-specific scope for custom conversation providers
 
+
+
+

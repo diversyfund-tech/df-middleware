@@ -88,3 +88,6 @@ http://localhost:3000/api/webhooks/ghl
 
 **Note:** The Delivery URL is required by GHL's provider configuration, but since we're only importing messages (not sending through GHL), it won't receive actual message webhooks. It's just a placeholder to satisfy the configuration requirement.
 
+
+
+

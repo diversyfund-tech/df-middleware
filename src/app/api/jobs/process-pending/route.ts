@@ -4,6 +4,10 @@ import { db } from "@/server/db";
 import { webhookEvents } from "@/server/db/schema";
 import { eq, and } from "drizzle-orm";
 import { routeWebhookEvent } from "@/lib/events/router";
+import { logger } from "@/lib/logger";
+import { updateJobQueueMetrics, recordJobProcessingDuration, recordJobFailure } from "@/lib/jobs/metrics";
+import { webhookEventsProcessedTotal } from "@/lib/metrics";
+import { WEBHOOK_SOURCES, JOB_QUEUE_NAMES } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes max for Vercel
@@ -28,7 +32,13 @@ export async function GET(req: NextRequest) {
 	}
 
 	try {
-		const batchSize = 10; // Process smaller batches in cron job
+		const batchSize = 100; // Process larger batches in cron job (increased from 10)
+		const startTime = Date.now();
+
+		logger.info({ batchSize }, "Starting job processing");
+
+		// Update queue metrics
+		await updateJobQueueMetrics();
 
 		// Get pending events
 		const pendingEvents = await db
@@ -38,11 +48,14 @@ export async function GET(req: NextRequest) {
 			.limit(batchSize);
 
 		if (pendingEvents.length === 0) {
+			logger.info({}, "No pending events to process");
 			return NextResponse.json({
 				processed: 0,
 				message: "No pending events",
 			});
 		}
+
+		logger.info({ count: pendingEvents.length }, "Found pending events to process");
 
 		// Process events directly (since we're in a cron job context)
 		// This provides immediate processing without requiring a dedicated worker
@@ -50,6 +63,7 @@ export async function GET(req: NextRequest) {
 		let errors = 0;
 
 		for (const event of pendingEvents) {
+			const eventStartTime = Date.now();
 			try {
 				// Atomically update status to processing
 				const updated = await db
@@ -80,9 +94,17 @@ export async function GET(req: NextRequest) {
 					})
 					.where(eq(webhookEvents.id, event.id));
 
+				const eventDuration = (Date.now() - eventStartTime) / 1000;
+				recordJobProcessingDuration(JOB_QUEUE_NAMES.WEBHOOK_EVENT, eventDuration);
+				webhookEventsProcessedTotal.inc({ source: event.source as keyof typeof WEBHOOK_SOURCES, status: "success" });
+
 				processed++;
 			} catch (error) {
-				console.error(`[process-pending] Error processing event ${event.id}:`, error);
+				const eventDuration = (Date.now() - eventStartTime) / 1000;
+				recordJobFailure(JOB_QUEUE_NAMES.WEBHOOK_EVENT);
+				webhookEventsProcessedTotal.inc({ source: event.source as keyof typeof WEBHOOK_SOURCES, status: "error" });
+
+				logger.error({ eventId: event.id, error }, "Error processing event");
 				const errorMessage = error instanceof Error ? error.message : "Unknown error";
 				await db
 					.update(webhookEvents)
@@ -96,13 +118,21 @@ export async function GET(req: NextRequest) {
 			}
 		}
 
+		const totalDuration = (Date.now() - startTime) / 1000;
+		logger.info({
+			processed,
+			errors,
+			totalPending: pendingEvents.length,
+			duration: totalDuration,
+		}, "Job processing completed");
+
 		return NextResponse.json({
 			processed,
 			errors,
 			totalPending: pendingEvents.length,
 		});
 	} catch (error) {
-		console.error("[process-pending] Error:", error);
+		logger.error({ error }, "Error in process-pending job");
 		const message = error instanceof Error ? error.message : "Internal server error";
 		return NextResponse.json(
 			{ error: message },

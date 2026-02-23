@@ -1,0 +1,52 @@
+graph TB
+    subgraph External["External Systems"]
+        GHL["GoHighLevel<br/>(CRM)"]
+        Aloware["Aloware<br/>(Power Dialer)"]
+        Verity["Verity<br/>(Capital Management)"]
+        Texting["Texting System<br/>(SMS)"]
+        Clerk["Clerk<br/>(Auth)"]
+    end
+
+    subgraph DFMiddleware["DF-Middleware"]
+        Express["Express Server<br/>(Port 3001)"]
+        NextJS["Next.js API Routes<br/>(Port 3002)"]
+        MCPServer["MCP Server<br/>(stdio)"]
+        JobQueue["pg-boss<br/>(Job Queue)"]
+        DB[(PostgreSQL<br/>Database)]
+    end
+
+    subgraph Clients["Clients"]
+        APIClient["API Client"]
+        MCPClient["MCP Client<br/>(AI Agent)"]
+    end
+
+    %% External to DF-Middleware
+    GHL -->|Webhooks| NextJS
+    Aloware -->|Webhooks| NextJS
+    Texting -->|Webhooks| NextJS
+    Verity -->|Broadcast Webhooks| NextJS
+
+    %% Clients to DF-Middleware
+    APIClient -->|HTTP| Express
+    MCPClient -->|stdio| MCPServer
+
+    %% DF-Middleware Internal
+    Express -->|Proxy| Verity
+    MCPServer -->|Proxy| Verity
+    NextJS -->|Enqueue| JobQueue
+    JobQueue -->|Process| NextJS
+    NextJS -->|Read/Write| DB
+    Express -->|Read| DB
+    MCPServer -->|Read| DB
+
+    %% Authentication
+    Clerk -->|JWT Tokens| MCPServer
+    Clerk -->|JWT Verification| Express
+
+    %% Sync Operations
+    NextJS -->|Sync| GHL
+    NextJS -->|Sync| Aloware
+
+    style DFMiddleware fill:#e1f5ff
+    style External fill:#fff4e1
+    style Clients fill:#e8f5e9

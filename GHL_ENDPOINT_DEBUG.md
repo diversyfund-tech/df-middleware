@@ -44,3 +44,6 @@ This will show us exactly what's being sent and help debug the 404.
 
 **Can you check your server console logs and share what URL is being called?**
 
+
+
+

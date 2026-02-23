@@ -49,3 +49,6 @@ If that doesn't work, we may need to:
 - Check if there are any additional provider settings needed
 - Contact GHL support about the exact error message
 
+
+
+

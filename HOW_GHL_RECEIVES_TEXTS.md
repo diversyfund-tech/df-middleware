@@ -166,3 +166,4 @@ To verify everything is working:
 
 **Bottom Line:** The Delivery URL is for **outbound** messages (GHL → DF Middleware). For **inbound** messages, DF Middleware actively calls GHL's API to add messages.
 
+

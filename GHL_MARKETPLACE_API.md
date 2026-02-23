@@ -72,3 +72,6 @@ GHL_CONVERSATION_PROVIDER_ID=your_provider_id_here
 
 **Note:** The GHL MCP is designed for standard GHL API operations (contacts, conversations, etc.), not for marketplace/developer operations. Those require the Developer Portal web interface.
 
+
+
+

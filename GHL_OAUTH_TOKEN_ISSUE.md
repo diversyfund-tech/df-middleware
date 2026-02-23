@@ -42,3 +42,6 @@ Create a provider that's accessible via PIT (if GHL supports this).
 
 **The good news: We're very close! The endpoint and provider ID are correct, we just need to use the right authentication token.**
 
+
+
+

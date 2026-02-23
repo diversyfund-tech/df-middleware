@@ -87,6 +87,15 @@ export const env = createEnv({
 		// Feature Flags
 		ENABLE_ALOWARE_SEQUENCES: z.string().default("false"), // Disable sequences temporarily
 		ENABLE_POWER_DIALER_LISTS: z.string().default("false"), // Disable power dialer lists temporarily
+		// MCP Server & API Gateway Configuration
+		PORT: z.string().default("3001").optional(),
+		DF_MIDDLEWARE_API_KEY: z.string().optional(), // API key for middleware-to-middleware communication
+		CLERK_SECRET_KEY: z.string().min(1), // Clerk secret key for JWT verification (required for MCP server)
+		VERITY_CATALOG_PATH: z.string().optional(), // Path to Verity API catalog JSON file
+		CORS_ALLOWED_ORIGINS: z.string().optional(), // Comma-separated list of allowed CORS origins
+		// ElevenLabs Workflow Configuration
+		ELEVENLABS_WEBHOOK_SECRET: z.string().optional(), // Secret for ElevenLabs webhook verification
+		MCP_BASE_URL: z.string().url().default("http://localhost:3002").optional(), // Not used (direct calls), but for future
 	},
 	client: {},
 	runtimeEnv: {
@@ -123,6 +132,13 @@ export const env = createEnv({
 		ALOWARE_STATUS_TO_SEQUENCE: process.env.ALOWARE_STATUS_TO_SEQUENCE,
 		ENABLE_ALOWARE_SEQUENCES: process.env.ENABLE_ALOWARE_SEQUENCES,
 		ENABLE_POWER_DIALER_LISTS: process.env.ENABLE_POWER_DIALER_LISTS,
+		PORT: process.env.PORT,
+		DF_MIDDLEWARE_API_KEY: process.env.DF_MIDDLEWARE_API_KEY,
+		CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+		VERITY_CATALOG_PATH: process.env.VERITY_CATALOG_PATH,
+		ELEVENLABS_WEBHOOK_SECRET: process.env.ELEVENLABS_WEBHOOK_SECRET,
+		MCP_BASE_URL: process.env.MCP_BASE_URL,
+		CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
 	},
 	skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
 });

@@ -26,3 +26,6 @@ Based on GHL API patterns, the type might need to be:
 ## Note
 The provider type is SMS, so the message type should likely match that, but the exact format/enum value is unclear from the error messages.
 
+
+
+

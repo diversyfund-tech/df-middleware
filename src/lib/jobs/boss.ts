@@ -1,5 +1,7 @@
 import PgBoss from "pg-boss";
 import { env } from "@/env";
+import { logger } from "@/lib/logger";
+import { jobQueueDepth, jobProcessingDuration, jobFailuresTotal, JOB_QUEUE_NAMES } from "@/lib/metrics";
 
 let boss: PgBoss | null = null;
 
@@ -20,7 +22,7 @@ export async function startBoss(): Promise<PgBoss> {
 
 	await boss.start();
 
-	console.log("[boss] PgBoss started successfully");
+	logger.info({ service: "pg-boss" }, "PgBoss started successfully");
 
 	return boss;
 }
@@ -32,7 +34,7 @@ export async function stopBoss(): Promise<void> {
 	if (boss) {
 		await boss.stop();
 		boss = null;
-		console.log("[boss] PgBoss stopped");
+		logger.info({ service: "pg-boss" }, "PgBoss stopped");
 	}
 }
 
@@ -55,4 +57,3 @@ export const WEBHOOK_EVENT_QUEUE = "process-webhook-event";
  * Job queue name for broadcast event processing
  */
 export const BROADCAST_EVENT_QUEUE = "process-broadcast-event";
-

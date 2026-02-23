@@ -429,3 +429,4 @@ DF_MIDDLEWARE_API_KEY=622d96d71affe1ec1185903ce26afc2ceed8f43a50a1286714d3ae271f
 
 The integration is properly set up. The main issue is the 404 error when calling the send-message endpoint, which suggests the endpoint may not be deployed or the URL is incorrect. The code itself is correct.
 
+

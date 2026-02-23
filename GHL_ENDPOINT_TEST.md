@@ -34,3 +34,6 @@ GHL API error (400): No conversationProviderId passed in body
 3. Try different endpoint paths
 4. Check server console logs for actual payload being sent
 
+
+
+

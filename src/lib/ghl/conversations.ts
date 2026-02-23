@@ -257,13 +257,17 @@ export async function sendOutboundMessage(
 
 	try {
 		// Create/get conversation first - this ensures the provider is properly linked
+		// For outbound messages, GHL REQUIRES conversationId, so we must create/get it
 		let conversationId = options?.conversationId;
 		if (!conversationId) {
 			try {
 				conversationId = await getOrCreateConversation(contactId, options?.phoneNumber, conversationProviderId);
 			} catch (error) {
-				console.log("[GHL] Conversation creation failed, will try without conversationId:", error instanceof Error ? error.message : String(error));
-				// Continue without conversationId - GHL may auto-create
+				const errorMessage = error instanceof Error ? error.message : String(error);
+				console.error("[GHL] Conversation creation failed - outbound messages require conversationId:", errorMessage);
+				// For outbound messages, conversationId is REQUIRED by GHL API
+				// We cannot proceed without it
+				throw new Error(`Failed to create/get conversation for outbound message: ${errorMessage}. GHL requires conversationId for outbound messages.`);
 			}
 		}
 
@@ -272,14 +276,10 @@ export async function sendOutboundMessage(
 			locationId,
 			contactId,
 			conversationProviderId,
+			conversationId, // REQUIRED for outbound messages
 			message,
 			type: "sms", // Try lowercase - GHL enum might be case-sensitive
 		};
-
-		// conversationId is optional - GHL will auto-create conversation if not provided
-		if (conversationId) {
-			body.conversationId = conversationId;
-		}
 
 		// Phone number (destination number - customer's number for outbound)
 		if (options?.phoneNumber) {

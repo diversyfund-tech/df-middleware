@@ -185,3 +185,4 @@ The only thing to verify is that your Marketplace App's Delivery URL is set to `
 - GHL Location: Marketplace App → Provider Settings
 - Verity Connection: Yes (DF Middleware calls Verity API)
 
+

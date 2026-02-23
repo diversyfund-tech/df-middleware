@@ -29,6 +29,20 @@
       "when": 1767033254677,
       "tag": "0003_gorgeous_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1769200000000,
+      "tag": "0004_add_elevenlabs_workflows",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1769201000000,
+      "tag": "0005_add_workflow_definitions",
+      "breakpoints": true
     }
   ]
 }

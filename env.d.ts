@@ -43,6 +43,14 @@ declare module "@/env" {
 		// Feature Flags
 		ENABLE_ALOWARE_SEQUENCES: string;
 		ENABLE_POWER_DIALER_LISTS: string;
+		// MCP Server & API Gateway Configuration
+		PORT?: string;
+		DF_MIDDLEWARE_API_KEY?: string;
+		CLERK_SECRET_KEY: string;
+		VERITY_CATALOG_PATH?: string;
+		// ElevenLabs Workflow Configuration
+		ELEVENLABS_WEBHOOK_SECRET?: string;
+		MCP_BASE_URL?: string;
 	};
 }
 

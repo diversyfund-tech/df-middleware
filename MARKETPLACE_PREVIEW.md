@@ -37,3 +37,6 @@ If you need PNG/JPEG instead:
 2. Export as PNG or JPEG at 960x540px
 3. Ensure 16:9 aspect ratio is maintained
 
+
+
+

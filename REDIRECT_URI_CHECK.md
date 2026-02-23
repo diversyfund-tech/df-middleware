@@ -70,3 +70,6 @@ The enhanced logging will show:
 - Full redirect_uri being sent
 - Whether variables are being read
 
+
+
+

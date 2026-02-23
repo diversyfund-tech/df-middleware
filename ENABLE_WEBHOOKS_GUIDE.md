@@ -54,3 +54,6 @@ Our existing `/api/webhooks/ghl` endpoint can handle these events (even if we do
 
 GHL might require webhooks to be enabled to fully "activate" a custom conversation provider. Even if we don't use them, enabling them might satisfy GHL's validation requirements.
 
+
+
+

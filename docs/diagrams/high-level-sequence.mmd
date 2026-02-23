@@ -1,0 +1,67 @@
+sequenceDiagram
+    participant Client
+    participant Express as Express Server
+    participant Gateway as API Gateway
+    participant Verity as Verity API
+    participant DB as Database
+
+    Note over Client,DB: API Gateway Request Flow
+
+    Client->>Express: POST /api/verity<br/>{endpoint, method, body}
+    Express->>Gateway: Route to API Gateway
+    Gateway->>Gateway: Validate API Key
+    Gateway->>Gateway: Validate Request Format
+    Gateway->>Gateway: Load API Catalog (optional)
+    Gateway->>Gateway: Extract Auth Token
+    Gateway->>Gateway: Verify Auth Token (Clerk JWT)
+    Gateway->>Verity: Proxy Request<br/>(with auth header)
+    Verity-->>Gateway: Response
+    Gateway-->>Express: Proxy Response
+    Express-->>Client: JSON Response
+
+    Note over Client,DB: Webhook Processing Flow
+
+    participant GHL as GoHighLevel
+    participant NextJS as Next.js API
+    participant Queue as pg-boss Queue
+    participant Worker as Job Worker
+    participant Sync as Sync Library
+
+    GHL->>NextJS: Webhook Event<br/>(contact.updated)
+    NextJS->>NextJS: Validate Webhook (optional)
+    NextJS->>NextJS: Create Dedupe Key
+    NextJS->>DB: Check for Duplicate
+    NextJS->>DB: Insert webhook_events<br/>(status: 'pending')
+    NextJS->>Queue: Enqueue Job
+    NextJS-->>GHL: 200 OK
+
+    Queue->>Worker: Process Job
+    Worker->>DB: Get Pending Event
+    Worker->>DB: Update Status ('processing')
+    Worker->>Sync: Sync Contact
+    Sync->>DB: Check contact_mappings
+    Sync->>GHL: Update Contact (if needed)
+    Sync->>Aloware: Update Contact (if needed)
+    Sync->>DB: Create/Update Mapping
+    Sync->>DB: Insert sync_log
+    Worker->>DB: Update Event Status ('done')
+    Worker-->>Queue: Job Complete
+
+    Note over Client,DB: MCP Tool Call Flow
+
+    participant MCPClient as MCP Client
+    participant MCPServer as MCP Server
+
+    MCPClient->>MCPServer: call_tool<br/>{name, arguments}
+    MCPServer->>MCPServer: Find Tool Definition
+    MCPServer->>MCPServer: Resolve Endpoint Path
+    MCPServer->>MCPServer: Extract Parameters
+    MCPServer->>MCPServer: Get Clerk Session Token
+    MCPServer->>Verity: Proxy Request<br/>(with Clerk JWT)
+    alt 401 Unauthorized
+        Verity-->>MCPServer: 401 Error
+        MCPServer->>MCPServer: Refresh Token
+        MCPServer->>Verity: Retry Request
+    end
+    Verity-->>MCPServer: Response
+    MCPServer-->>MCPClient: Tool Result

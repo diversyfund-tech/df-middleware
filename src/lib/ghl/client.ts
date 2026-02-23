@@ -53,10 +53,12 @@ export async function ghlRequest<T>(
 	// EXCEPTIONS:
 	// - free-slots endpoint doesn't accept locationId
 	// - conversations/messages/inbound and /outbound might not need locationId in query (it's in body)
+	// - /conversations POST endpoint has locationId in body, don't add to query
 	let url = `${GHL_API_BASE_URL}${endpoint}`;
 	if (!endpoint.includes("/free-slots") && 
 	    !endpoint.includes("/conversations/messages/inbound") && 
-	    !endpoint.includes("/conversations/messages/outbound")) {
+	    !endpoint.includes("/conversations/messages/outbound") &&
+	    !(endpoint === "/conversations" && options.method === "POST")) {
 		if (!endpoint.includes("?")) {
 			url = `${url}?locationId=${locationId}`;
 		} else if (!endpoint.includes("locationId=")) {

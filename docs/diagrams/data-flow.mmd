@@ -1,0 +1,100 @@
+graph TB
+    subgraph Sources["Data Sources"]
+        GHLContact["GHL Contact<br/>Updated"]
+        AlowareContact["Aloware Contact<br/>Updated"]
+        TextingMessage["Texting Message<br/>Received"]
+        VerityBroadcast["Verity Broadcast<br/>Updated"]
+    end
+
+    subgraph Webhooks["Webhook Handlers"]
+        GHLWebhook["GHL Webhook<br/>Handler"]
+        AlowareWebhook["Aloware Webhook<br/>Handler"]
+        TextingWebhook["Texting Webhook<br/>Handler"]
+        BroadcastWebhook["Broadcast Webhook<br/>Handler"]
+    end
+
+    subgraph Events["Event Storage"]
+        WebhookEvents[("webhook_events<br/>(status: pending)")]
+        TextingEvents[("texting_webhook_events<br/>(status: pending)")]
+        BroadcastEvents[("broadcast_webhook_events<br/>(status: pending)")]
+    end
+
+    subgraph Queue["Job Queue"]
+        JobQueue[("pg-boss<br/>Queue")]
+    end
+
+    subgraph Processing["Job Processing"]
+        Worker["Job Worker"]
+        ContactSync["Contact Sync<br/>Function"]
+        MessageSync["Message Sync<br/>Function"]
+        BroadcastSync["Broadcast Sync<br/>Function"]
+    end
+
+    subgraph Mappings["ID Mappings"]
+        ContactMappings[("contact_mappings<br/>(GHL ↔ Aloware)")]
+        MessageMappings[("message_mappings<br/>(Texting ↔ GHL ↔ Aloware)")]
+    end
+
+    subgraph Targets["Target Systems"]
+        GHLAPI["GHL API"]
+        AlowareAPI["Aloware API"]
+    end
+
+    subgraph Audit["Audit Trail"]
+        SyncLog[("sync_log<br/>(operation history)")]
+        OptOutRegistry[("optout_registry<br/>(DNC list)")]
+    end
+
+    %% Source to Webhook
+    GHLContact -->|Webhook| GHLWebhook
+    AlowareContact -->|Webhook| AlowareWebhook
+    TextingMessage -->|Webhook| TextingWebhook
+    VerityBroadcast -->|Webhook| BroadcastWebhook
+
+    %% Webhook to Events
+    GHLWebhook -->|Insert| WebhookEvents
+    AlowareWebhook -->|Insert| WebhookEvents
+    TextingWebhook -->|Insert| TextingEvents
+    BroadcastWebhook -->|Insert| BroadcastEvents
+
+    %% Events to Queue
+    WebhookEvents -->|Enqueue| JobQueue
+    TextingEvents -->|Enqueue| JobQueue
+    BroadcastEvents -->|Enqueue| JobQueue
+
+    %% Queue to Processing
+    JobQueue -->|Process| Worker
+    Worker -->|Route| ContactSync
+    Worker -->|Route| MessageSync
+    Worker -->|Route| BroadcastSync
+
+    %% Processing to Mappings
+    ContactSync -->|Check/Create| ContactMappings
+    MessageSync -->|Check/Create| MessageMappings
+
+    %% Processing to Targets
+    ContactSync -->|Update| GHLAPI
+    ContactSync -->|Update| AlowareAPI
+    MessageSync -->|Create Message| GHLAPI
+    MessageSync -->|Create Message| AlowareAPI
+    BroadcastSync -->|Update Analytics| GHLAPI
+
+    %% Processing to Audit
+    ContactSync -->|Log| SyncLog
+    MessageSync -->|Log| SyncLog
+    BroadcastSync -->|Log| SyncLog
+    MessageSync -->|Update| OptOutRegistry
+
+    %% Update Event Status
+    Worker -->|Update Status| WebhookEvents
+    Worker -->|Update Status| TextingEvents
+    Worker -->|Update Status| BroadcastEvents
+
+    style Sources fill:#fff4e1
+    style Webhooks fill:#e1f5ff
+    style Events fill:#f3e5f5
+    style Queue fill:#e8f5e9
+    style Processing fill:#fff9c4
+    style Mappings fill:#fce4ec
+    style Targets fill:#e0f2f1
+    style Audit fill:#f1f8e9

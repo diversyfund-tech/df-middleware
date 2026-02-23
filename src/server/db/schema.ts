@@ -7,6 +7,7 @@ import {
 	uniqueIndex,
 	jsonb,
 	boolean,
+	integer,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -390,6 +391,102 @@ export const ghlOauthTokens = pgTable(
 	(table) => ({
 		locationIdUnique: uniqueIndex("ghl_oauth_tokens_location_id_unique").on(table.locationId),
 		expiresAtIdx: index("ghl_oauth_tokens_expires_at_idx").on(table.expiresAt),
+	}),
+);
+
+/**
+ * ElevenLabs Agent Configs Table
+ * Stores agent configurations for ElevenLabs voice agents
+ */
+export const elevenlabsAgentConfigs = pgTable(
+	"elevenlabs_agent_configs",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		agentId: text("agent_id").notNull().unique(), // ElevenLabs agent ID
+		name: text("name").notNull(),
+		workflowType: text("workflow_type").notNull(), // 'sales' | 'support' | 'appointment' | 'custom'
+		systemPrompt: text("system_prompt").notNull(),
+		isActive: boolean("is_active").default(true).notNull(),
+		maxConcurrentCalls: integer("max_concurrent_calls").default(10),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => ({
+		agentIdUnique: uniqueIndex("elevenlabs_agent_configs_agent_id_unique").on(table.agentId),
+		workflowTypeIdx: index("elevenlabs_agent_configs_workflow_type_idx").on(table.workflowType),
+		isActiveIdx: index("elevenlabs_agent_configs_is_active_idx").on(table.isActive),
+	}),
+);
+
+/**
+ * Workflow Executions Table
+ * Tracks workflow execution runs
+ */
+export const workflowExecutions = pgTable(
+	"workflow_executions",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		agentId: text("agent_id").notNull(), // ElevenLabs agent ID
+		workflowType: text("workflow_type").notNull(),
+		status: text("status").notNull(), // 'in_progress' | 'completed' | 'failed' | 'abandoned'
+		workflowState: jsonb("workflow_state"), // Store collected data, current step, etc.
+		startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+		completedAt: timestamp("completed_at", { withTimezone: true }),
+		metadata: jsonb("metadata"), // Additional context (call ID, phone number, etc.)
+	},
+	(table) => ({
+		agentIdIdx: index("workflow_executions_agent_id_idx").on(table.agentId),
+		statusIdx: index("workflow_executions_status_idx").on(table.status),
+		startedAtIdx: index("workflow_executions_started_at_idx").on(table.startedAt),
+	}),
+);
+
+/**
+ * Workflow Steps Table
+ * Tracks individual workflow steps within an execution
+ */
+export const workflowSteps = pgTable(
+	"workflow_steps",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		executionId: uuid("execution_id").notNull().references(() => workflowExecutions.id),
+		stepType: text("step_type").notNull(), // 'collect_info' | 'tool_call' | 'decision' | 'complete'
+		stepName: text("step_name").notNull(), // e.g., 'collect_name', 'book_appointment'
+		status: text("status").notNull(), // 'pending' | 'in_progress' | 'completed' | 'failed'
+		toolCalled: text("tool_called"), // MCP tool name if applicable
+		toolArgs: jsonb("tool_args"), // Arguments passed to tool
+		result: jsonb("result"), // Tool result or step outcome
+		errorMessage: text("error_message"),
+		timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => ({
+		executionIdIdx: index("workflow_steps_execution_id_idx").on(table.executionId),
+		statusIdx: index("workflow_steps_status_idx").on(table.status),
+		timestampIdx: index("workflow_steps_timestamp_idx").on(table.timestamp),
+	}),
+);
+
+/**
+ * Workflow Definitions Table
+ * Stores user-created workflow definitions from the visual builder
+ */
+export const workflowDefinitions = pgTable(
+	"workflow_definitions",
+	{
+		id: uuid("id").defaultRandom().primaryKey().notNull(),
+		name: text("name").notNull(),
+		workflowType: text("workflow_type").notNull(), // 'sales' | 'support' | 'appointment' | 'custom'
+		description: text("description"),
+		steps: jsonb("steps").notNull(), // Array of WorkflowStepDefinition
+		initialStep: text("initial_step").notNull(),
+		createdBy: text("created_by"), // User identifier
+		isActive: boolean("is_active").default(true).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => ({
+		workflowTypeIdx: index("workflow_definitions_workflow_type_idx").on(table.workflowType),
+		isActiveIdx: index("workflow_definitions_is_active_idx").on(table.isActive),
 	}),
 );
 

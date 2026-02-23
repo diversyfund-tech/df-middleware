@@ -3,22 +3,52 @@ import { env } from "@/env";
 import { db } from "@/server/db";
 import { textingWebhookEvents } from "@/server/db/schema";
 import { normalizeTextingWebhook } from "@/lib/texting/normalize";
-import { createHash } from "crypto";
+import { createHash, createHmac } from "crypto";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Validate texting webhook secret (from Verity)
+ * Verify texting webhook signature using HMAC-SHA256
+ * Supports both signature header (HMAC-SHA256) and simple secret header (backward compatibility)
  */
-function validateTextingSecret(req: NextRequest): boolean {
-	const secret = req.headers.get("X-Texting-Secret");
+function verifyTextingWebhookSignature(bodyText: string, req: NextRequest): boolean {
 	const expectedSecret = env.VERITY_WEBHOOK_SECRET?.trim();
-	
-	if (!secret || !expectedSecret) {
+	if (!expectedSecret) {
 		return false;
 	}
 	
-	return secret.trim() === expectedSecret;
+	// Check for HMAC signature header first
+	const signature = req.headers.get("X-Texting-Signature") || req.headers.get("X-Signature");
+	if (signature) {
+		try {
+			const hmac = createHmac("sha256", expectedSecret);
+			hmac.update(bodyText);
+			const expectedSignature = hmac.digest("hex");
+			
+			// Constant-time comparison
+			if (signature.length !== expectedSignature.length) {
+				return false;
+			}
+			
+			let match = 0;
+			for (let i = 0; i < signature.length; i++) {
+				match |= signature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
+			}
+			
+			return match === 0;
+		} catch (error) {
+			console.error("[texting.webhook] Error verifying signature:", error);
+			return false;
+		}
+	}
+	
+	// Fallback to simple secret header validation (backward compatibility)
+	const secret = req.headers.get("X-Texting-Secret");
+	if (secret) {
+		return secret.trim() === expectedSecret;
+	}
+	
+	return false;
 }
 
 /**
@@ -71,19 +101,21 @@ function computeEntityId(payload: {
 export async function POST(req: NextRequest) {
 	console.log("[texting.webhook] Received webhook request");
 
-	// Validate secret
-	if (!validateTextingSecret(req)) {
-		console.error("[texting.webhook] Invalid secret");
-		return new NextResponse("Unauthorized", { status: 401 });
-	}
-
-	// Parse JSON body
+	// Get raw body text for signature verification
+	let bodyText: string;
 	let rawBody: unknown;
 	try {
-		rawBody = await req.json();
+		bodyText = await req.text();
+		rawBody = JSON.parse(bodyText);
 	} catch (error) {
 		console.error("[texting.webhook] Invalid JSON:", error);
 		return new NextResponse("Invalid JSON", { status: 400 });
+	}
+
+	// Verify webhook signature/secret
+	if (!verifyTextingWebhookSignature(bodyText, req)) {
+		console.error("[texting.webhook] Invalid signature or secret");
+		return new NextResponse("Unauthorized", { status: 401 });
 	}
 
 	// Normalize payload

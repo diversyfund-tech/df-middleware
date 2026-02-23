@@ -81,3 +81,6 @@ If OAuth fails with "Invalid parameter: `client_id`":
 3. Compare with GHL Marketplace App settings
 4. If mismatch found, update GHL settings to match exactly
 
+
+
+

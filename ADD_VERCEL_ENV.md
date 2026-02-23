@@ -50,3 +50,6 @@ echo "postgresql://neondb_owner:LYtOTMa8rk5p@ep-late-shape-a6nsw636-pooler.us-we
 2. Verify variables are set: `vercel env ls`
 3. Test OAuth flow in production
 
+
+
+

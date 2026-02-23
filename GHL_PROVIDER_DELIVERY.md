@@ -131,3 +131,6 @@ Once configured, test by:
 
 **Status:** ✅ Ready for testing once Delivery URL is configured in GHL Marketplace App
 
+
+
+

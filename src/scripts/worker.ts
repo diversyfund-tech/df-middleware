@@ -7,6 +7,10 @@ import { eq, and } from "drizzle-orm";
 import { routeWebhookEvent } from "@/lib/events/router";
 import { processTextingEvent } from "@/lib/texting/jobs";
 import { routeBroadcastEvent } from "@/lib/broadcasts/router";
+import { logger } from "@/lib/logger";
+import { recordJobProcessingDuration, recordJobFailure, updateJobQueueMetrics } from "@/lib/jobs/metrics";
+import { webhookEventsProcessedTotal } from "@/lib/metrics";
+import { WEBHOOK_SOURCES, JOB_QUEUE_NAMES } from "@/lib/constants";
 
 /**
  * Worker process for processing webhook events
@@ -33,13 +37,13 @@ async function processWebhookEvent(job: { id: string; data: { webhookEventId: st
 		});
 
 		if (!event) {
-			console.warn(`[worker] Webhook event ${webhookEventId} not found`);
+			logger.warn({ webhookEventId }, "Webhook event not found");
 			return;
 		}
 
 		// Check if already processed
 		if (event.status !== "pending") {
-			console.log(`[worker] Event ${webhookEventId} already processed (status: ${event.status})`);
+			logger.info({ webhookEventId, status: event.status }, "Event already processed");
 			return;
 		}
 
@@ -52,7 +56,7 @@ async function processWebhookEvent(job: { id: string; data: { webhookEventId: st
 		});
 
 		if (quarantined) {
-			console.log(`[worker] Event ${webhookEventId} is quarantined, skipping`);
+			logger.info({ webhookEventId }, "Event is quarantined, skipping");
 			// Mark as done without processing
 			await db
 				.update(webhookEvents)
@@ -74,11 +78,17 @@ async function processWebhookEvent(job: { id: string; data: { webhookEventId: st
 
 		if (updated.length === 0 || updated[0].status !== "processing") {
 			// Another worker already claimed it
-			console.log(`[worker] Event ${webhookEventId} already claimed by another worker`);
+			logger.info({ webhookEventId }, "Event already claimed by another worker");
 			return;
 		}
 
-		console.log(`[worker] Processing event ${webhookEventId} (${event.source}:${event.entityType}:${event.entityId})`);
+		const jobStartTime = Date.now();
+		logger.info({
+			webhookEventId,
+			source: event.source,
+			entityType: event.entityType,
+			entityId: event.entityId,
+		}, "Processing webhook event");
 
 		// Route and process the event
 		await routeWebhookEvent(event);
@@ -92,10 +102,15 @@ async function processWebhookEvent(job: { id: string; data: { webhookEventId: st
 			})
 			.where(eq(webhookEvents.id, webhookEventId));
 
-		console.log(`[worker] Successfully processed event ${webhookEventId}`);
+		const jobDuration = (Date.now() - jobStartTime) / 1000;
+		recordJobProcessingDuration(JOB_QUEUE_NAMES.WEBHOOK_EVENT, jobDuration);
+		webhookEventsProcessedTotal.inc({ source: event.source as keyof typeof WEBHOOK_SOURCES, status: "success" });
+
+		logger.info({ webhookEventId, duration: jobDuration }, "Successfully processed webhook event");
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : "Unknown error";
-		console.error(`[worker] Error processing event ${webhookEventId}:`, error);
+		recordJobFailure(JOB_QUEUE_NAMES.WEBHOOK_EVENT);
+		logger.error({ webhookEventId, error }, "Error processing webhook event");
 
 		// Mark as error
 		try {

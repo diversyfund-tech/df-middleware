@@ -1,0 +1,12 @@
+{
+  "eventType": "message.sent",
+  "direction": "outbound",
+  "from": "+15559876543",
+  "to": "+19492459055",
+  "body": "Test message with conversationId - verifying fix",
+  "messageId": "test_conv_id_verification",
+  "conversationId": "test_verity_conversation_123",
+  "timestamp": "2025-01-27T12:00:00Z"
+}
+
+

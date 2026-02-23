@@ -23,6 +23,9 @@ import { detectAndHandleReassignment } from "@/lib/agents/detectReassignment";
 import { handleAlowareListStatusChange } from "@/lib/aloware/sequences/enrollHandler";
 import { findBroadcastsForContactByPhoneOrEmail } from "@/lib/broadcasts/find-broadcasts-by-contact";
 import { startBoss, BROADCAST_EVENT_QUEUE } from "@/lib/jobs/boss";
+import { logger } from "@/lib/logger";
+import { syncOperationsTotal, syncOperationDuration } from "@/lib/metrics";
+import { SYNC_DIRECTION, ENTITY_TYPE, SYNC_STATUS, WEBHOOK_SOURCES } from "@/lib/constants";
 
 type WebhookEvent = typeof webhookEvents.$inferSelect;
 
@@ -31,19 +34,24 @@ type WebhookEvent = typeof webhookEvents.$inferSelect;
  */
 export async function routeWebhookEvent(event: WebhookEvent): Promise<void> {
 	const correlationId = event.id;
+	const syncStartTime = Date.now();
 
 	try {
 		// Check for loop prevention (middleware-originated events)
 		const origin = detectMiddlewareOrigin(event.source, event.payloadJson);
 		if (origin.isOrigin) {
-			console.log(`[router] Event ${event.id} is middleware-originated, skipping sync`);
+			logger.info({
+				eventId: event.id,
+				source: event.source,
+				entityType: event.entityType,
+			}, "Event is middleware-originated, skipping sync");
 			// Mark as done without syncing
 			await db.insert(syncLog).values({
-				direction: event.source === "aloware" ? "aloware_to_ghl" : "ghl_to_aloware",
+				direction: event.source === "aloware" ? SYNC_DIRECTION.ALOWARE_TO_GHL : SYNC_DIRECTION.GHL_TO_ALOWARE,
 				entityType: event.entityType,
 				entityId: event.entityId,
 				sourceId: event.entityId,
-				status: "success",
+				status: SYNC_STATUS.SUCCESS,
 				finishedAt: new Date(),
 				errorMessage: "middleware-originated",
 				correlationId,
@@ -56,30 +64,55 @@ export async function routeWebhookEvent(event: WebhookEvent): Promise<void> {
 		} else if (event.source === "ghl") {
 			await routeGhLEvent(event, correlationId);
 		} else {
-			console.warn(`[router] Unknown source: ${event.source}`);
+			logger.warn({ eventId: event.id, source: event.source }, "Unknown webhook source");
 			// Mark as done with log entry
 			await db.insert(syncLog).values({
 				direction: "unknown",
 				entityType: event.entityType,
 				entityId: event.entityId,
 				sourceId: event.entityId,
-				status: "error",
+				status: SYNC_STATUS.ERROR,
 				finishedAt: new Date(),
 				errorMessage: `Unknown source: ${event.source}`,
 				correlationId,
 			});
 		}
+
+		// Record sync operation metrics
+		const syncDuration = (Date.now() - syncStartTime) / 1000;
+		const direction = event.source === "aloware" ? SYNC_DIRECTION.ALOWARE_TO_GHL : SYNC_DIRECTION.GHL_TO_ALOWARE;
+		syncOperationsTotal.inc({
+			direction,
+			entity_type: event.entityType,
+			status: SYNC_STATUS.SUCCESS,
+		});
+		syncOperationDuration.observe({ direction, entity_type: event.entityType }, syncDuration);
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : "Unknown error";
-		console.error(`[router] Error routing event ${event.id}:`, error);
+		const syncDuration = (Date.now() - syncStartTime) / 1000;
+		const direction = event.source === "aloware" ? SYNC_DIRECTION.ALOWARE_TO_GHL : SYNC_DIRECTION.GHL_TO_ALOWARE;
+
+		logger.error({
+			eventId: event.id,
+			source: event.source,
+			error,
+		}, "Error routing webhook event");
+
+		// Record error metrics
+		syncOperationsTotal.inc({
+			direction,
+			entity_type: event.entityType,
+			status: SYNC_STATUS.ERROR,
+		});
+		syncOperationDuration.observe({ direction, entity_type: event.entityType }, syncDuration);
 
 		// Log error
 		await db.insert(syncLog).values({
-			direction: event.source === "aloware" ? "aloware_to_ghl" : "ghl_to_aloware",
+			direction,
 			entityType: event.entityType,
 			entityId: event.entityId,
 			sourceId: event.entityId,
-			status: "error",
+			status: SYNC_STATUS.ERROR,
 			finishedAt: new Date(),
 			errorMessage,
 			correlationId,
@@ -146,7 +179,11 @@ async function routeAlowareEvent(event: WebhookEvent, correlationId: string): Pr
 				
 				// Only process if status changed (or if we don't have previous status)
 				if (previousStatus !== alowareListStatus) {
-					console.log(`[router] Detected aloware_list_status change: ${previousStatus || "null"} → ${alowareListStatus}`);
+					logger.info({
+						alowareContactId: event.entityId,
+						previousStatus: previousStatus || "null",
+						newStatus: alowareListStatus,
+					}, "Detected aloware_list_status change");
 					
 					try {
 						await handleAlowareListStatusChange({
@@ -174,23 +211,33 @@ async function routeAlowareEvent(event: WebhookEvent, correlationId: string): Pr
 							// because we need agentKey. The agent-managed list sync will create it when needed.
 						}
 					} catch (error) {
-						console.error(`[router] Error handling aloware_list_status change:`, error);
+						logger.error({
+							alowareContactId: event.entityId,
+							error,
+						}, "Error handling aloware_list_status change");
 						// Don't throw - continue with normal skip logic
 					}
 				} else {
-					console.log(`[router] aloware_list_status unchanged (${alowareListStatus}), skipping sequence enrollment`);
+					logger.info({
+						alowareContactId: event.entityId,
+						status: alowareListStatus,
+					}, "aloware_list_status unchanged, skipping sequence enrollment");
 				}
 			}
 		}
 
 		// Contact Created/Updated - SKIP (GHL is source of truth)
-		console.log(`[router] Skipping Aloware contact event ${event.eventType} - GHL is source of truth`);
+		logger.info({
+			eventId: event.id,
+			eventType: event.eventType,
+			source: event.source,
+		}, "Skipping Aloware contact event - GHL is source of truth");
 		await db.insert(syncLog).values({
-			direction: "aloware_to_ghl",
-			entityType: "contact",
+			direction: SYNC_DIRECTION.ALOWARE_TO_GHL,
+			entityType: ENTITY_TYPE.CONTACT,
 			entityId: event.entityId,
 			sourceId: event.entityId,
-			status: "skipped",
+			status: SYNC_STATUS.SKIPPED,
 			finishedAt: new Date(),
 			errorMessage: "aloware_contact_event_ignored_source_of_truth_is_ghl",
 			correlationId,
@@ -251,14 +298,17 @@ async function routeAlowareEvent(event: WebhookEvent, correlationId: string): Pr
 	}
 
 	// Appointment Saved - SKIP (GHL is source of truth for appointments)
-	if (event.entityType === "appointment") {
-		console.log(`[router] Skipping Aloware appointment event - GHL is source of truth`);
+	if (event.entityType === ENTITY_TYPE.APPOINTMENT) {
+		logger.info({
+			eventId: event.id,
+			eventType: event.eventType,
+		}, "Skipping Aloware appointment event - GHL is source of truth");
 		await db.insert(syncLog).values({
-			direction: "aloware_to_ghl",
-			entityType: "appointment",
+			direction: SYNC_DIRECTION.ALOWARE_TO_GHL,
+			entityType: ENTITY_TYPE.APPOINTMENT,
 			entityId: event.entityId,
 			sourceId: event.entityId,
-			status: "skipped",
+			status: SYNC_STATUS.SKIPPED,
 			finishedAt: new Date(),
 			errorMessage: "appointments_sot_is_ghl",
 			correlationId,
@@ -267,13 +317,17 @@ async function routeAlowareEvent(event: WebhookEvent, correlationId: string): Pr
 	}
 
 	// Unknown/unhandled event type - Skip gracefully (don't error)
-	console.log(`[router] Unhandled Aloware event type: ${event.entityType} (${event.eventType})`);
+	logger.info({
+		eventId: event.id,
+		entityType: event.entityType,
+		eventType: event.eventType,
+	}, "Unhandled Aloware event type");
 	await db.insert(syncLog).values({
-		direction: "aloware_to_ghl",
+		direction: SYNC_DIRECTION.ALOWARE_TO_GHL,
 		entityType: event.entityType,
 		entityId: event.entityId,
 		sourceId: event.entityId,
-		status: "skipped",
+		status: SYNC_STATUS.SKIPPED,
 		finishedAt: new Date(),
 		errorMessage: `Unhandled event type: ${event.eventType}`,
 		correlationId,
@@ -308,13 +362,13 @@ async function handleContactDisposed(
 		});
 
 		if (!mapping) {
-			console.warn(`[contact-disposed] No mapping found for Aloware contact ${contactId}`);
+			logger.warn({ alowareContactId: contactId }, "No mapping found for Aloware contact");
 			await db.insert(syncLog).values({
-				direction: "aloware_to_ghl",
-				entityType: "contact",
+				direction: SYNC_DIRECTION.ALOWARE_TO_GHL,
+				entityType: ENTITY_TYPE.CONTACT,
 				entityId: contactId,
 				sourceId: contactId,
-				status: "skipped",
+				status: SYNC_STATUS.SKIPPED,
 				finishedAt: new Date(),
 				errorMessage: "No contact mapping found",
 				correlationId,
@@ -333,26 +387,29 @@ async function handleContactDisposed(
 
 		// Log success
 		await db.insert(syncLog).values({
-			direction: "aloware_to_ghl",
-			entityType: "contact",
+			direction: SYNC_DIRECTION.ALOWARE_TO_GHL,
+			entityType: ENTITY_TYPE.CONTACT,
 			entityId: contactId,
 			sourceId: contactId,
 			targetId: ghlContactId,
-			status: "success",
+			status: SYNC_STATUS.SUCCESS,
 			finishedAt: new Date(),
 			errorMessage: `Disposition: ${disposition}`,
 			correlationId,
 		});
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : "Unknown error";
-		console.error(`[contact-disposed] Error handling contact disposed:`, error);
+		logger.error({
+			alowareContactId: contactId,
+			error,
+		}, "Error handling contact disposed");
 
 		await db.insert(syncLog).values({
-			direction: "aloware_to_ghl",
-			entityType: "contact",
+			direction: SYNC_DIRECTION.ALOWARE_TO_GHL,
+			entityType: ENTITY_TYPE.CONTACT,
 			entityId: contactId,
 			sourceId: contactId,
-			status: "error",
+			status: SYNC_STATUS.ERROR,
 			finishedAt: new Date(),
 			errorMessage,
 			correlationId,
@@ -416,6 +473,20 @@ async function routeGhLEvent(event: WebhookEvent, correlationId: string): Promis
 
 	// Handle contact events
 	if (event.entityType === "contact") {
+		// Sync tags from GHL contact (for all contact events)
+		if (event.eventType === "contact.created" || event.eventType === "contact.updated" || event.eventType === "contact.changed") {
+			try {
+				const { syncTagsFromWebhook } = await import("@/lib/sync/tag-sync");
+				await syncTagsFromWebhook(event.payloadJson, event.entityId, correlationId);
+			} catch (tagError) {
+				logger.warn({
+					contactId: event.entityId,
+					error: tagError,
+				}, "Error syncing tags for contact");
+				// Don't throw - tag sync is not critical
+			}
+		}
+
 		// Agent-managed list sync (if enabled)
 		// Note: We only sync contacts to Aloware when needed for call lists (GHL is source of truth)
 		if (enableAgentListSync && (event.eventType === "contact.created" || event.eventType === "contact.updated" || event.eventType === "contact.changed")) {
@@ -455,7 +526,10 @@ async function routeGhLEvent(event: WebhookEvent, correlationId: string): Promis
 					}
 				}
 			} catch (error) {
-				console.error(`[router] Error processing contact event for agent lists:`, error);
+				logger.error({
+					contactId: event.entityId,
+					error,
+				}, "Error processing contact event for agent lists");
 				// Don't throw - contact sync already succeeded
 			}
 		}
@@ -466,34 +540,156 @@ async function routeGhLEvent(event: WebhookEvent, correlationId: string): Promis
 				where: eq(contactMappings.ghlContactId, event.entityId),
 			});
 			if (mapping?.alowareContactId) {
-				// TODO: Mark Aloware contact as inactive/DNC if API supports it
-				console.log(`[router] GHL contact ${event.entityId} deleted, Aloware contact ${mapping.alowareContactId} should be marked inactive`);
-				await db.insert(syncLog).values({
-					direction: "ghl_to_aloware",
-					entityType: "contact",
-					entityId: event.entityId,
-					sourceId: event.entityId,
-					targetId: mapping.alowareContactId,
-					status: "skipped",
-					finishedAt: new Date(),
-					errorMessage: "contact.deleted not fully implemented - manual cleanup may be needed",
-					correlationId,
-				});
+				try {
+					// Mark Aloware contact as DNC (Do Not Call) since GHL contact was deleted
+					const { updateContact } = await import("@/lib/aloware/client");
+					await updateContact(mapping.alowareContactId, {
+						is_dnc: true,
+						is_blocked: true,
+					});
+					
+					logger.info({
+						ghlContactId: event.entityId,
+						alowareContactId: mapping.alowareContactId,
+					}, "Marked Aloware contact as DNC after GHL contact deletion");
+					
+					await db.insert(syncLog).values({
+						direction: SYNC_DIRECTION.GHL_TO_ALOWARE,
+						entityType: ENTITY_TYPE.CONTACT,
+						entityId: event.entityId,
+						sourceId: event.entityId,
+						targetId: mapping.alowareContactId,
+						status: SYNC_STATUS.SUCCESS,
+						finishedAt: new Date(),
+						errorMessage: "Contact marked as DNC in Aloware",
+						correlationId,
+					});
+				} catch (error) {
+					const errorMessage = error instanceof Error ? error.message : "Unknown error";
+					logger.error({
+						ghlContactId: event.entityId,
+						alowareContactId: mapping.alowareContactId,
+						error,
+					}, "Error marking Aloware contact as DNC");
+					
+					await db.insert(syncLog).values({
+						direction: SYNC_DIRECTION.GHL_TO_ALOWARE,
+						entityType: ENTITY_TYPE.CONTACT,
+						entityId: event.entityId,
+						sourceId: event.entityId,
+						targetId: mapping.alowareContactId,
+						status: SYNC_STATUS.ERROR,
+						finishedAt: new Date(),
+						errorMessage,
+						correlationId,
+					});
+					// Don't throw - log error but continue
+				}
 			}
 		}
 		return;
 	}
 
-	// Handle appointment events - trigger broadcast analytics recalculation
+	// Handle appointment events - sync appointment ID to Verity and trigger broadcast analytics recalculation
 	if (event.entityType === "appointment" || event.eventType.includes("appointment")) {
 		try {
 			const payload = event.payloadJson as any;
-			const contactId = payload.contactId || payload.contact?.id || event.entityId;
-			const phone = payload.phone || payload.contact?.phone;
+			const appointmentId = event.entityId || payload.id || payload.appointmentId || payload.appointment?.id;
+			
+			// Extract contactId from various possible payload structures
+			// NOTE: event.entityId is the appointment ID, NOT the contact ID, so don't use it as fallback
+			let contactId = payload.contactId || 
+			                payload.contact_id || 
+			                payload.contact?.id || 
+			                payload.contact?.contactId ||
+			                payload.appointment?.contactId ||
+			                payload.body?.contactId ||
+			                payload.data?.contactId;
+			
+			// If contactId is still missing, fetch the appointment from GHL API
+			if (appointmentId && !contactId) {
+				try {
+					logger.info({ appointmentId }, "ContactId missing from payload, fetching appointment from GHL API");
+					const { getAppointment } = await import("@/lib/workflows/appointments/ghl-appointment");
+					const appointment = await getAppointment(String(appointmentId));
+					contactId = appointment.contactId;
+					logger.info({ appointmentId, contactId }, "Retrieved contactId from GHL API");
+				} catch (fetchError) {
+					logger.error({
+						appointmentId,
+						error: fetchError,
+					}, "Failed to fetch appointment from GHL API to get contactId");
+					// Continue without contactId - we'll try to match by phone/email below
+				}
+			}
+			
+			const phone = payload.phone || payload.contact?.phone || payload.contact?.phoneNumber;
 			const email = payload.email || payload.contact?.email;
 
+			// If we still don't have contactId but have phone/email, try to find GHL contact
+			if (appointmentId && !contactId && (phone || email)) {
+				try {
+					logger.info({ phone, email }, "ContactId still missing, searching GHL contact by phone/email");
+					const { searchContact } = await import("@/lib/ghl/client");
+					const ghlContact = await searchContact(email, phone);
+					if (ghlContact) {
+						contactId = ghlContact.id;
+						logger.info({ contactId, phone, email }, "Found GHL contact ID from phone/email search");
+					} else {
+						logger.warn({ phone, email }, "Could not find GHL contact by phone/email");
+					}
+				} catch (searchError) {
+					logger.error({
+						phone,
+						email,
+						error: searchError,
+					}, "Error searching for GHL contact by phone/email");
+					// Continue without contactId - we'll try to match by phone/email below
+				}
+			}
+
+			// Sync appointment ID to Verity leads table and tags
+			if (appointmentId && contactId) {
+				try {
+					const { syncGHLAppointmentToVerity } = await import("@/lib/sync/appointment-sync");
+					await syncGHLAppointmentToVerity(String(appointmentId), String(contactId), correlationId);
+					logger.info({
+						appointmentId,
+						contactId,
+					}, "Synced appointment to Verity");
+					
+					// Also sync tags from the contact
+					try {
+						const { syncTagsFromGHL } = await import("@/lib/sync/tag-sync");
+						await syncTagsFromGHL(String(contactId), correlationId);
+					} catch (tagError) {
+						logger.warn({
+							contactId,
+							error: tagError,
+						}, "Error syncing tags for contact");
+						// Don't throw - tag sync is not critical
+					}
+				} catch (syncError) {
+					logger.error({
+						appointmentId,
+						contactId,
+						error: syncError,
+					}, "Error syncing appointment to Verity");
+					// Don't throw - continue with broadcast analytics recalculation
+				}
+			} else if (appointmentId && !contactId) {
+				logger.warn({
+					appointmentId,
+					phone,
+					email,
+				}, "Cannot sync appointment to Verity: missing contactId and could not resolve from phone/email");
+			}
+
 			if (contactId || phone || email) {
-				console.log(`[router] Processing appointment event for contact ${contactId || phone || email}`);
+				logger.info({
+					contactId: contactId || phone || email,
+					appointmentId,
+				}, "Processing appointment event");
 
 				// Find broadcasts for this contact
 				let broadcastIds: string[] = [];
@@ -590,20 +786,27 @@ async function routeGhLEvent(event: WebhookEvent, correlationId: string): Promis
 				}
 			}
 		} catch (error) {
-			console.error(`[router] Error processing pipeline event for agent lists:`, error);
+			logger.error({
+				eventId: event.id,
+				error,
+			}, "Error processing pipeline event for agent lists");
 			// Don't throw - mark as skipped
 		}
 		return;
 	}
 
 	// Unknown/unhandled GHL event type - Skip gracefully (never throw)
-	console.log(`[router] Unhandled GHL event type: ${event.entityType} (${event.eventType})`);
+	logger.info({
+		eventId: event.id,
+		entityType: event.entityType,
+		eventType: event.eventType,
+	}, "Unhandled GHL event type");
 	await db.insert(syncLog).values({
-		direction: "ghl_to_aloware",
+		direction: SYNC_DIRECTION.GHL_TO_ALOWARE,
 		entityType: event.entityType,
 		entityId: event.entityId,
 		sourceId: event.entityId,
-		status: "skipped",
+		status: SYNC_STATUS.SKIPPED,
 		finishedAt: new Date(),
 		errorMessage: `Unhandled GHL event type: ${event.eventType}`,
 		correlationId,
